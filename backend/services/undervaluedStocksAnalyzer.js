@@ -246,15 +246,16 @@ class UndervaluedStocksAnalyzer {
 
   /**
    * 비유동자산 분석 (10년 이상 보유 자산 추정)
+   * - 전체 계정과목 API로 세부 자산 정보 조회
    * - 감가상각누계액 / 취득원가 비율로 자산 연한 추정
-   * - 토지는 감가상각하지 않으므로 별도 확인
+   * - 토지는 감가상각하지 않으므로 장기보유 자산으로 판정
    */
   async analyzeNonCurrentAssets(corpCode, year = 2024) {
     try {
       await this.delay(this.rateLimitDelay);
 
-      // 유형자산 상세 내역 조회 (주석 정보)
-      const response = await axios.get(`${this.baseURL}/fnlttSinglAcnt.json`, {
+      // 전체 계정과목 API 사용 (세부 항목 포함)
+      const response = await axios.get(`${this.baseURL}/fnlttSinglAcntAll.json`, {
         params: {
           crtfc_key: this.apiKey,
           corp_code: corpCode,
@@ -262,83 +263,164 @@ class UndervaluedStocksAnalyzer {
           reprt_code: '11011',
           fs_div: 'CFS'
         },
-        timeout: 10000
+        timeout: 15000
       });
 
+      // 2024년 데이터 없으면 2023년 시도
+      if (response.data.status === '013' && year === 2024) {
+        return await this.analyzeNonCurrentAssets(corpCode, 2023);
+      }
+
       if (response.data.status !== '000') {
-        return { hasOldAssets: null, reason: '데이터 조회 실패' };
+        return { hasOldAssets: null, reason: `DART API 오류: ${response.data.message}` };
       }
 
       const dataList = response.data.list || [];
 
-      // 감가상각 관련 데이터 추출
-      let accumulatedDepreciation = 0; // 감가상각누계액
-      let grossAssets = 0;              // 취득원가 (장부가액 + 감가상각누계액)
-      let landValue = 0;
-      let buildingValue = 0;
-
-      dataList.forEach(item => {
-        const accountName = item.account_nm;
-        const amount = parseInt(item.thstrm_amount?.replace(/,/g, '') || '0') / 100000000;
-
-        // 감가상각누계액 (마이너스 값으로 표시되는 경우가 많음)
-        if (accountName.includes('감가상각누계액')) {
-          accumulatedDepreciation += Math.abs(amount);
-        }
-        // 토지
-        else if (accountName === '토지') {
-          landValue = amount;
-        }
-        // 건물
-        else if (accountName === '건물' || accountName === '건물및구축물') {
-          buildingValue = amount;
-        }
-        // 유형자산
-        else if (accountName === '유형자산') {
-          grossAssets = amount;
-        }
-      });
-
-      // 자산 연한 추정 (감가상각 비율 기반)
-      // 일반적인 감가상각 내용연수: 건물 40년, 기계장치 10년
-      // 감가상각누계액/총자산 > 50% 이면 대략 절반 이상 상각됨 = 오래된 자산
-
+      // 자산 관련 데이터 추출
       const analysis = {
         hasOldAssets: false,
-        landValue,
-        buildingValue,
-        accumulatedDepreciation,
+        landValue: 0,
+        buildingGross: 0,        // 건물 취득원가
+        buildingNet: 0,          // 건물 장부가액
+        buildingDepreciation: 0, // 건물 감가상각누계액
+        machineryGross: 0,       // 기계장치 취득원가
+        machineryNet: 0,         // 기계장치 장부가액
+        machineryDepreciation: 0,
+        totalDepreciation: 0,    // 총 감가상각누계액
+        tangibleAssets: 0,       // 유형자산 총액
         depreciationRatio: 0,
-        estimatedAge: null,
+        estimatedBuildingAge: null,
+        estimatedMachineryAge: null,
+        assetDetails: [],
         reason: ''
       };
 
-      // 토지는 10년 이상 보유 가능성 높음 (감가상각 없음)
-      if (landValue > 0) {
-        analysis.hasOldAssets = true;
-        analysis.reason = `토지 ${landValue.toLocaleString()}억원 보유 (감가상각 없는 장기자산)`;
-      }
+      // 재무상태표(BS) 항목만 필터링
+      const bsItems = dataList.filter(item => item.sj_div === 'BS');
 
-      // 감가상각 비율로 건물/설비 연한 추정
-      if (grossAssets > 0 && accumulatedDepreciation > 0) {
-        analysis.depreciationRatio = (accumulatedDepreciation / (grossAssets + accumulatedDepreciation)) * 100;
+      bsItems.forEach(item => {
+        const accountName = item.account_nm || '';
+        const amount = parseInt(item.thstrm_amount?.replace(/,/g, '') || '0') / 100000000;
 
-        // 건물 기준 40년, 50% 상각 = 약 20년
-        // 25% 이상 상각되면 10년 이상 보유로 추정
-        if (analysis.depreciationRatio >= 25) {
-          analysis.hasOldAssets = true;
-          analysis.estimatedAge = Math.round(analysis.depreciationRatio * 0.4); // 대략적인 연수
-          analysis.reason += ` 감가상각 ${analysis.depreciationRatio.toFixed(1)}% (추정 ${analysis.estimatedAge}년 이상 보유)`;
+        // 토지
+        if (accountName === '토지' || accountName.includes('토지')) {
+          if (amount > 0 && analysis.landValue === 0) {
+            analysis.landValue = amount;
+            analysis.assetDetails.push({ type: '토지', value: amount, note: '감가상각 없음 (장기보유)' });
+          }
+        }
+        // 건물 (장부가액)
+        else if ((accountName === '건물' || accountName === '건물및구축물' || accountName.includes('건물'))
+                 && !accountName.includes('감가상각') && !accountName.includes('누계')) {
+          if (amount > 0 && analysis.buildingNet === 0) {
+            analysis.buildingNet = amount;
+          }
+        }
+        // 건물 감가상각누계액
+        else if (accountName.includes('건물') && accountName.includes('감가상각누계액')) {
+          analysis.buildingDepreciation = Math.abs(amount);
+        }
+        // 기계장치 (장부가액)
+        else if ((accountName === '기계장치' || accountName.includes('기계'))
+                 && !accountName.includes('감가상각') && !accountName.includes('누계')) {
+          if (amount > 0 && analysis.machineryNet === 0) {
+            analysis.machineryNet = amount;
+          }
+        }
+        // 기계장치 감가상각누계액
+        else if (accountName.includes('기계') && accountName.includes('감가상각누계액')) {
+          analysis.machineryDepreciation = Math.abs(amount);
+        }
+        // 유형자산 총계
+        else if (accountName === '유형자산') {
+          analysis.tangibleAssets = amount;
+        }
+        // 총 감가상각누계액
+        else if (accountName.includes('감가상각누계액') && !accountName.includes('건물') && !accountName.includes('기계')) {
+          analysis.totalDepreciation += Math.abs(amount);
+        }
+      });
+
+      // 건물 취득원가 및 연한 계산 (내용연수 40년 가정)
+      if (analysis.buildingNet > 0 || analysis.buildingDepreciation > 0) {
+        analysis.buildingGross = analysis.buildingNet + analysis.buildingDepreciation;
+        if (analysis.buildingGross > 0) {
+          const buildingDepRatio = (analysis.buildingDepreciation / analysis.buildingGross) * 100;
+          analysis.estimatedBuildingAge = Math.round(buildingDepRatio * 0.4); // 40년 * 비율
+          if (analysis.estimatedBuildingAge >= 10) {
+            analysis.assetDetails.push({
+              type: '건물',
+              grossValue: analysis.buildingGross,
+              netValue: analysis.buildingNet,
+              depreciation: analysis.buildingDepreciation,
+              depreciationRatio: buildingDepRatio.toFixed(1) + '%',
+              estimatedAge: analysis.estimatedBuildingAge + '년',
+              note: '내용연수 40년 기준'
+            });
+          }
         }
       }
 
-      console.log(`🏭 비유동자산 분석: ${analysis.reason || '10년 이상 자산 없음'}`);
+      // 기계장치 취득원가 및 연한 계산 (내용연수 10년 가정)
+      if (analysis.machineryNet > 0 || analysis.machineryDepreciation > 0) {
+        analysis.machineryGross = analysis.machineryNet + analysis.machineryDepreciation;
+        if (analysis.machineryGross > 0) {
+          const machineryDepRatio = (analysis.machineryDepreciation / analysis.machineryGross) * 100;
+          analysis.estimatedMachineryAge = Math.round(machineryDepRatio * 0.1); // 10년 * 비율
+          if (analysis.estimatedMachineryAge >= 5) {
+            analysis.assetDetails.push({
+              type: '기계장치',
+              grossValue: analysis.machineryGross,
+              netValue: analysis.machineryNet,
+              depreciation: analysis.machineryDepreciation,
+              depreciationRatio: machineryDepRatio.toFixed(1) + '%',
+              estimatedAge: analysis.estimatedMachineryAge + '년',
+              note: '내용연수 10년 기준'
+            });
+          }
+        }
+      }
+
+      // 전체 감가상각 비율 계산
+      if (analysis.tangibleAssets > 0 && analysis.totalDepreciation > 0) {
+        const grossTotal = analysis.tangibleAssets + analysis.totalDepreciation;
+        analysis.depreciationRatio = (analysis.totalDepreciation / grossTotal) * 100;
+      }
+
+      // 10년 이상 보유 자산 판정
+      const reasons = [];
+
+      // 토지가 있으면 장기보유 자산
+      if (analysis.landValue > 0) {
+        analysis.hasOldAssets = true;
+        reasons.push(`토지 ${analysis.landValue.toLocaleString()}억원 (장기보유 자산)`);
+      }
+
+      // 건물 10년 이상
+      if (analysis.estimatedBuildingAge && analysis.estimatedBuildingAge >= 10) {
+        analysis.hasOldAssets = true;
+        reasons.push(`건물 추정 ${analysis.estimatedBuildingAge}년 보유 (취득원가 ${analysis.buildingGross.toLocaleString()}억)`);
+      }
+
+      // 기계장치 5년 이상 (기계는 내용연수가 짧으므로 5년 이상이면 오래된 것)
+      if (analysis.estimatedMachineryAge && analysis.estimatedMachineryAge >= 5) {
+        analysis.hasOldAssets = true;
+        reasons.push(`기계장치 추정 ${analysis.estimatedMachineryAge}년 보유`);
+      }
+
+      analysis.reason = reasons.join(', ') || '10년 이상 보유 자산 미확인';
+
+      console.log(`🏭 비유동자산 분석: ${analysis.reason}`);
+      if (analysis.assetDetails.length > 0) {
+        console.log(`📋 자산 상세:`, JSON.stringify(analysis.assetDetails, null, 2));
+      }
 
       return analysis;
 
     } catch (error) {
       console.error('비유동자산 분석 실패:', error.message);
-      return { hasOldAssets: null, reason: error.message };
+      return { hasOldAssets: null, reason: error.message, assetDetails: [] };
     }
   }
 
