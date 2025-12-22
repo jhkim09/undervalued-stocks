@@ -6,6 +6,7 @@ require('dotenv').config();
 
 // 라우트 임포트
 const undervaluedRoutes = require('./routes/undervalued');
+const screeningRoutes = require('./routes/screening');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -45,6 +46,7 @@ mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/undervalu
 
 // API 라우트
 app.use('/api/undervalued', undervaluedRoutes);
+app.use('/api/screening', screeningRoutes);
 
 // Health Check
 app.get('/api/health', async (req, res) => {
@@ -69,7 +71,10 @@ app.get('/api/health', async (req, res) => {
         analyze: '/api/undervalued/analyze/:stockCode?price=현재가',
         bulkAnalyze: 'POST /api/undervalued/bulk-analyze',
         screen: '/api/undervalued/screen',
-        criteria: '/api/undervalued/criteria'
+        criteria: '/api/undervalued/criteria',
+        runScreening: 'POST /api/screening/run',
+        screeningStatus: '/api/screening/status',
+        testEmail: 'POST /api/screening/test-email'
       },
       timestamp: new Date().toISOString()
     });
@@ -115,6 +120,50 @@ cron.schedule('0 6 1 4 *', async () => {
 }, {
   timezone: "Asia/Seoul"
 });
+
+// 분기별 저평가주식 스크리닝 Cron 작업
+// 분기보고서 공시 후 스크리닝 실행 (4월, 5월, 8월, 11월)
+const screeningService = require('./services/screeningService');
+
+// 4월 15일: 사업보고서(연간) 반영 스크리닝
+cron.schedule('0 7 15 4 *', async () => {
+  console.log('📊 [4월] 연간 사업보고서 반영 저평가 스크리닝 시작...');
+  try {
+    await screeningService.runFullScreening({ sendEmail: true });
+  } catch (error) {
+    console.error('❌ 4월 스크리닝 실패:', error.message);
+  }
+}, { timezone: "Asia/Seoul" });
+
+// 5월 20일: 1분기보고서 반영 스크리닝
+cron.schedule('0 7 20 5 *', async () => {
+  console.log('📊 [5월] 1분기보고서 반영 저평가 스크리닝 시작...');
+  try {
+    await screeningService.runFullScreening({ sendEmail: true });
+  } catch (error) {
+    console.error('❌ 5월 스크리닝 실패:', error.message);
+  }
+}, { timezone: "Asia/Seoul" });
+
+// 8월 20일: 반기보고서 반영 스크리닝
+cron.schedule('0 7 20 8 *', async () => {
+  console.log('📊 [8월] 반기보고서 반영 저평가 스크리닝 시작...');
+  try {
+    await screeningService.runFullScreening({ sendEmail: true });
+  } catch (error) {
+    console.error('❌ 8월 스크리닝 실패:', error.message);
+  }
+}, { timezone: "Asia/Seoul" });
+
+// 11월 20일: 3분기보고서 반영 스크리닝
+cron.schedule('0 7 20 11 *', async () => {
+  console.log('📊 [11월] 3분기보고서 반영 저평가 스크리닝 시작...');
+  try {
+    await screeningService.runFullScreening({ sendEmail: true });
+  } catch (error) {
+    console.error('❌ 11월 스크리닝 실패:', error.message);
+  }
+}, { timezone: "Asia/Seoul" });
 
 app.listen(PORT, () => {
   console.log(`🚀 저평가주식 분석 서버 실행 중: port ${PORT}`);
