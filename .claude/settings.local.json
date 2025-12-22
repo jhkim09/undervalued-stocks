@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node:*)",
+      "Bash(PORT=6001 node server.js)",
+      "Bash(PORT=6002 node server.js)",
+      "Bash(cp:*)",
+      "Bash(curl:*)",
+      "Bash(git cherry-pick:*)",
+      "Bash(git add:*)",
+      "Bash(git push:*)",
+      "Bash(git commit -m \"$(cat <<''EOF''\ndocs: StockPriceService 실시간 데이터 전환 이력 추가\n\n- 하드코딩 백업 가격 제거 배경 및 수정 내역 문서화\n- 영향받는 API 및 주의사항 명시\n- 관련 커밋 및 배포 정보 추가\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")"
+    ],
+    "additionalDirectories": [
+      "C:\\c\\Users\\newsh\\test-project\\turtleinvest"
+    ]
+  }
+}

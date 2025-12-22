@@ -1,0 +1,13 @@
+{
+  "total": 294,
+  "processed": 55,
+  "success": 0,
+  "failed": 55,
+  "skipped": 0,
+  "currentBatch": 11,
+  "errors": [],
+  "startTime": "2025-08-19T15:34:56.363Z",
+  "lastUpdate": "2025-08-19T15:35:50.707Z",
+  "elapsedTime": "54.3초",
+  "estimatedRemaining": "약 4분"
+}

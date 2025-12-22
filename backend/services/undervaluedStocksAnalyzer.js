@@ -1,0 +1,454 @@
+/**
+ * 저평가주식 분석기
+ * - PSR 0.5 이하
+ * - PER × PBR ≤ 22.5 (벤저민 그레이엄 공식)
+ * - 비유동자산 분석 (10년 이상 보유 자산)
+ */
+
+const axios = require('axios');
+const dartService = require('./dartService');
+
+class UndervaluedStocksAnalyzer {
+  constructor() {
+    this.baseURL = 'https://opendart.fss.or.kr/api';
+    this.apiKey = process.env.DART_API_KEY || '';
+
+    // 저평가 기준
+    this.criteria = {
+      maxPSR: 0.5,           // PSR 0.5 이하
+      maxGrahamNumber: 22.5, // PER × PBR ≤ 22.5
+      minAssetAge: 10        // 비유동자산 최소 보유 연수
+    };
+
+    this.rateLimitDelay = 200;
+  }
+
+  /**
+   * 저평가주식 분석 (단일 종목)
+   */
+  async analyzeStock(stockCode, currentPrice) {
+    try {
+      console.log(`\n📊 ${stockCode} 저평가 분석 시작...`);
+
+      // 1. 기업코드 조회
+      const corpInfo = await dartService.getCorpCode(stockCode);
+      if (!corpInfo) {
+        return { stockCode, error: '기업코드 없음' };
+      }
+
+      // 2. 상장주식수 조회
+      const sharesOutstanding = await dartService.getSharesOutstanding(stockCode);
+      if (!sharesOutstanding) {
+        return { stockCode, error: '상장주식수 조회 실패' };
+      }
+
+      // 3. 재무제표 조회 (자본총계, 매출액, 당기순이익)
+      const financialData = await this.getDetailedFinancials(corpInfo.corpCode);
+      if (!financialData) {
+        return { stockCode, error: '재무데이터 조회 실패' };
+      }
+
+      // 4. 시가총액 계산
+      const marketCap = currentPrice * sharesOutstanding;
+      const marketCapBillion = marketCap / 100000000; // 억원 단위
+
+      // 5. 가치 지표 계산
+      const valuationMetrics = this.calculateValuationMetrics(
+        marketCapBillion,
+        financialData
+      );
+
+      // 6. 비유동자산 분석 (10년 이상 자산)
+      const assetAnalysis = await this.analyzeNonCurrentAssets(corpInfo.corpCode);
+
+      // 7. 저평가 조건 체크
+      const isUndervalued = this.checkUndervaluedCriteria(valuationMetrics);
+
+      const result = {
+        stockCode,
+        name: corpInfo.corpName,
+        currentPrice,
+        marketCap: marketCapBillion,
+        sharesOutstanding,
+
+        // 재무 데이터
+        revenue: financialData.revenue,
+        netIncome: financialData.netIncome,
+        totalEquity: financialData.totalEquity,
+        nonCurrentAssets: financialData.nonCurrentAssets,
+
+        // 가치 지표
+        PSR: valuationMetrics.PSR,
+        PER: valuationMetrics.PER,
+        PBR: valuationMetrics.PBR,
+        grahamNumber: valuationMetrics.grahamNumber, // PER × PBR
+
+        // 비유동자산 분석
+        assetAnalysis,
+
+        // 저평가 판정
+        isUndervalued,
+        undervaluedReasons: this.getUndervaluedReasons(valuationMetrics, assetAnalysis),
+
+        analyzedAt: new Date().toISOString()
+      };
+
+      console.log(`✅ ${stockCode} 분석 완료: PSR=${valuationMetrics.PSR?.toFixed(2)}, PER×PBR=${valuationMetrics.grahamNumber?.toFixed(2)}`);
+
+      return result;
+
+    } catch (error) {
+      console.error(`❌ ${stockCode} 분석 실패:`, error.message);
+      return { stockCode, error: error.message };
+    }
+  }
+
+  /**
+   * 상세 재무데이터 조회 (비유동자산 포함)
+   */
+  async getDetailedFinancials(corpCode, year = 2024) {
+    try {
+      await this.delay(this.rateLimitDelay);
+
+      const response = await axios.get(`${this.baseURL}/fnlttSinglAcnt.json`, {
+        params: {
+          crtfc_key: this.apiKey,
+          corp_code: corpCode,
+          bsns_year: year.toString(),
+          reprt_code: '11011', // 사업보고서
+          fs_div: 'CFS' // 연결재무제표
+        },
+        timeout: 10000
+      });
+
+      if (response.data.status === '013' && year === 2024) {
+        // 2024년 없으면 2023년 시도
+        return await this.getDetailedFinancials(corpCode, 2023);
+      }
+
+      if (response.data.status !== '000' || !response.data.list) {
+        return null;
+      }
+
+      const dataList = response.data.list;
+      const result = {
+        revenue: 0,
+        netIncome: 0,
+        totalEquity: 0,
+        totalAssets: 0,
+        nonCurrentAssets: 0,
+        tangibleAssets: 0,     // 유형자산
+        intangibleAssets: 0,   // 무형자산
+        investmentAssets: 0,   // 투자자산
+        land: 0,               // 토지
+        buildings: 0           // 건물
+      };
+
+      const seenAccounts = new Set();
+
+      dataList.forEach(item => {
+        const accountName = item.account_nm;
+        const amount = parseInt(item.thstrm_amount?.replace(/,/g, '') || '0');
+        const amountBillion = amount / 100000000; // 억원
+
+        // 매출액
+        if (accountName === '매출액' && !seenAccounts.has('revenue')) {
+          result.revenue = amountBillion;
+          seenAccounts.add('revenue');
+        }
+        // 당기순이익
+        else if (accountName === '당기순이익' && !seenAccounts.has('netIncome')) {
+          result.netIncome = amountBillion;
+          seenAccounts.add('netIncome');
+        }
+        // 자본총계
+        else if (accountName === '자본총계' && !seenAccounts.has('totalEquity')) {
+          result.totalEquity = amountBillion;
+          seenAccounts.add('totalEquity');
+        }
+        // 자산총계
+        else if (accountName === '자산총계' && !seenAccounts.has('totalAssets')) {
+          result.totalAssets = amountBillion;
+          seenAccounts.add('totalAssets');
+        }
+        // 비유동자산
+        else if (accountName === '비유동자산' && !seenAccounts.has('nonCurrentAssets')) {
+          result.nonCurrentAssets = amountBillion;
+          seenAccounts.add('nonCurrentAssets');
+        }
+        // 유형자산
+        else if (accountName === '유형자산' && !seenAccounts.has('tangibleAssets')) {
+          result.tangibleAssets = amountBillion;
+          seenAccounts.add('tangibleAssets');
+        }
+        // 무형자산
+        else if (accountName === '무형자산' && !seenAccounts.has('intangibleAssets')) {
+          result.intangibleAssets = amountBillion;
+          seenAccounts.add('intangibleAssets');
+        }
+        // 토지
+        else if (accountName === '토지' && !seenAccounts.has('land')) {
+          result.land = amountBillion;
+          seenAccounts.add('land');
+        }
+        // 건물
+        else if ((accountName === '건물' || accountName === '건물및구축물') && !seenAccounts.has('buildings')) {
+          result.buildings = amountBillion;
+          seenAccounts.add('buildings');
+        }
+      });
+
+      console.log(`📋 재무데이터: 매출 ${result.revenue.toLocaleString()}억, 순이익 ${result.netIncome.toLocaleString()}억, 자본 ${result.totalEquity.toLocaleString()}억`);
+      console.log(`📋 비유동자산: ${result.nonCurrentAssets.toLocaleString()}억 (유형 ${result.tangibleAssets.toLocaleString()}억, 토지 ${result.land.toLocaleString()}억)`);
+
+      return result;
+
+    } catch (error) {
+      console.error('재무데이터 조회 실패:', error.message);
+      return null;
+    }
+  }
+
+  /**
+   * 가치 지표 계산 (PSR, PER, PBR, 그레이엄 넘버)
+   */
+  calculateValuationMetrics(marketCapBillion, financialData) {
+    const metrics = {
+      PSR: null,
+      PER: null,
+      PBR: null,
+      grahamNumber: null
+    };
+
+    // PSR = 시가총액 / 매출액
+    if (financialData.revenue > 0) {
+      metrics.PSR = marketCapBillion / financialData.revenue;
+    }
+
+    // PER = 시가총액 / 당기순이익
+    if (financialData.netIncome > 0) {
+      metrics.PER = marketCapBillion / financialData.netIncome;
+    }
+
+    // PBR = 시가총액 / 자본총계
+    if (financialData.totalEquity > 0) {
+      metrics.PBR = marketCapBillion / financialData.totalEquity;
+    }
+
+    // 그레이엄 넘버 = PER × PBR (22.5 이하면 저평가)
+    if (metrics.PER !== null && metrics.PBR !== null &&
+        metrics.PER > 0 && metrics.PBR > 0) {
+      metrics.grahamNumber = metrics.PER * metrics.PBR;
+    }
+
+    return metrics;
+  }
+
+  /**
+   * 비유동자산 분석 (10년 이상 보유 자산 추정)
+   * - 감가상각누계액 / 취득원가 비율로 자산 연한 추정
+   * - 토지는 감가상각하지 않으므로 별도 확인
+   */
+  async analyzeNonCurrentAssets(corpCode, year = 2024) {
+    try {
+      await this.delay(this.rateLimitDelay);
+
+      // 유형자산 상세 내역 조회 (주석 정보)
+      const response = await axios.get(`${this.baseURL}/fnlttSinglAcnt.json`, {
+        params: {
+          crtfc_key: this.apiKey,
+          corp_code: corpCode,
+          bsns_year: year.toString(),
+          reprt_code: '11011',
+          fs_div: 'CFS'
+        },
+        timeout: 10000
+      });
+
+      if (response.data.status !== '000') {
+        return { hasOldAssets: null, reason: '데이터 조회 실패' };
+      }
+
+      const dataList = response.data.list || [];
+
+      // 감가상각 관련 데이터 추출
+      let accumulatedDepreciation = 0; // 감가상각누계액
+      let grossAssets = 0;              // 취득원가 (장부가액 + 감가상각누계액)
+      let landValue = 0;
+      let buildingValue = 0;
+
+      dataList.forEach(item => {
+        const accountName = item.account_nm;
+        const amount = parseInt(item.thstrm_amount?.replace(/,/g, '') || '0') / 100000000;
+
+        // 감가상각누계액 (마이너스 값으로 표시되는 경우가 많음)
+        if (accountName.includes('감가상각누계액')) {
+          accumulatedDepreciation += Math.abs(amount);
+        }
+        // 토지
+        else if (accountName === '토지') {
+          landValue = amount;
+        }
+        // 건물
+        else if (accountName === '건물' || accountName === '건물및구축물') {
+          buildingValue = amount;
+        }
+        // 유형자산
+        else if (accountName === '유형자산') {
+          grossAssets = amount;
+        }
+      });
+
+      // 자산 연한 추정 (감가상각 비율 기반)
+      // 일반적인 감가상각 내용연수: 건물 40년, 기계장치 10년
+      // 감가상각누계액/총자산 > 50% 이면 대략 절반 이상 상각됨 = 오래된 자산
+
+      const analysis = {
+        hasOldAssets: false,
+        landValue,
+        buildingValue,
+        accumulatedDepreciation,
+        depreciationRatio: 0,
+        estimatedAge: null,
+        reason: ''
+      };
+
+      // 토지는 10년 이상 보유 가능성 높음 (감가상각 없음)
+      if (landValue > 0) {
+        analysis.hasOldAssets = true;
+        analysis.reason = `토지 ${landValue.toLocaleString()}억원 보유 (감가상각 없는 장기자산)`;
+      }
+
+      // 감가상각 비율로 건물/설비 연한 추정
+      if (grossAssets > 0 && accumulatedDepreciation > 0) {
+        analysis.depreciationRatio = (accumulatedDepreciation / (grossAssets + accumulatedDepreciation)) * 100;
+
+        // 건물 기준 40년, 50% 상각 = 약 20년
+        // 25% 이상 상각되면 10년 이상 보유로 추정
+        if (analysis.depreciationRatio >= 25) {
+          analysis.hasOldAssets = true;
+          analysis.estimatedAge = Math.round(analysis.depreciationRatio * 0.4); // 대략적인 연수
+          analysis.reason += ` 감가상각 ${analysis.depreciationRatio.toFixed(1)}% (추정 ${analysis.estimatedAge}년 이상 보유)`;
+        }
+      }
+
+      console.log(`🏭 비유동자산 분석: ${analysis.reason || '10년 이상 자산 없음'}`);
+
+      return analysis;
+
+    } catch (error) {
+      console.error('비유동자산 분석 실패:', error.message);
+      return { hasOldAssets: null, reason: error.message };
+    }
+  }
+
+  /**
+   * 저평가 조건 체크
+   */
+  checkUndervaluedCriteria(metrics) {
+    const criteria = {
+      PSR: metrics.PSR !== null && metrics.PSR <= this.criteria.maxPSR,
+      grahamNumber: metrics.grahamNumber !== null && metrics.grahamNumber <= this.criteria.maxGrahamNumber
+    };
+
+    // PSR 또는 그레이엄 넘버 중 하나라도 만족하면 저평가
+    return criteria.PSR || criteria.grahamNumber;
+  }
+
+  /**
+   * 저평가 사유 생성
+   */
+  getUndervaluedReasons(metrics, assetAnalysis) {
+    const reasons = [];
+
+    if (metrics.PSR !== null && metrics.PSR <= this.criteria.maxPSR) {
+      reasons.push(`PSR ${metrics.PSR.toFixed(2)} ≤ ${this.criteria.maxPSR} (매출 대비 저평가)`);
+    }
+
+    if (metrics.grahamNumber !== null && metrics.grahamNumber <= this.criteria.maxGrahamNumber) {
+      reasons.push(`PER×PBR = ${metrics.grahamNumber.toFixed(2)} ≤ ${this.criteria.maxGrahamNumber} (그레이엄 기준)`);
+    }
+
+    if (assetAnalysis?.hasOldAssets) {
+      reasons.push(`장기 보유 자산: ${assetAnalysis.reason}`);
+    }
+
+    return reasons;
+  }
+
+  /**
+   * 여러 종목 일괄 분석 (주가 데이터 필요)
+   */
+  async analyzeBulk(stocksWithPrice, options = {}) {
+    const { batchSize = 10, onProgress } = options;
+
+    console.log(`\n🚀 저평가주식 일괄 분석 시작: ${stocksWithPrice.length}개 종목`);
+
+    const results = [];
+    const undervalued = [];
+    const failed = [];
+
+    for (let i = 0; i < stocksWithPrice.length; i += batchSize) {
+      const batch = stocksWithPrice.slice(i, i + batchSize);
+      const batchNum = Math.floor(i / batchSize) + 1;
+      const totalBatches = Math.ceil(stocksWithPrice.length / batchSize);
+
+      console.log(`\n📦 배치 ${batchNum}/${totalBatches} (${batch.length}개 종목)`);
+
+      for (const { stockCode, price } of batch) {
+        const result = await this.analyzeStock(stockCode, price);
+
+        if (result.error) {
+          failed.push(result);
+        } else {
+          results.push(result);
+          if (result.isUndervalued) {
+            undervalued.push(result);
+          }
+        }
+
+        if (onProgress) {
+          onProgress({
+            current: results.length + failed.length,
+            total: stocksWithPrice.length,
+            undervalued: undervalued.length
+          });
+        }
+      }
+
+      // 배치 간 대기
+      if (i + batchSize < stocksWithPrice.length) {
+        await this.delay(1000);
+      }
+    }
+
+    // 저평가 종목 정렬 (그레이엄 넘버 낮은 순)
+    undervalued.sort((a, b) => (a.grahamNumber || 999) - (b.grahamNumber || 999));
+
+    const summary = {
+      total: stocksWithPrice.length,
+      analyzed: results.length,
+      failed: failed.length,
+      undervalued: undervalued.length,
+      criteria: this.criteria
+    };
+
+    console.log(`\n✅ 분석 완료!`);
+    console.log(`   - 분석 성공: ${summary.analyzed}개`);
+    console.log(`   - 저평가 발견: ${summary.undervalued}개`);
+    console.log(`   - 분석 실패: ${summary.failed}개`);
+
+    return {
+      summary,
+      undervalued,
+      all: results,
+      failed
+    };
+  }
+
+  delay(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+}
+
+module.exports = new UndervaluedStocksAnalyzer();

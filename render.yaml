@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: undervalued-stocks
+    runtime: node
+    region: singapore
+    plan: free
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DART_API_KEY
+        sync: false
+      - key: MONGODB_URI
+        sync: false
+    healthCheckPath: /api/health
