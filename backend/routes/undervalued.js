@@ -9,22 +9,34 @@ const express = require('express');
 const router = express.Router();
 const undervaluedAnalyzer = require('../services/undervaluedStocksAnalyzer');
 const stockListService = require('../services/stockListService');
+const kiwoomService = require('../services/kiwoomService');
 
 /**
  * GET /api/undervalued/analyze/:stockCode
  * 단일 종목 저평가 분석
- * Query: price (현재가, 필수)
+ * Query: price (현재가, 선택 - 없으면 키움 API로 자동 조회)
  */
 router.get('/analyze/:stockCode', async (req, res) => {
   try {
     const { stockCode } = req.params;
-    const { price } = req.query;
+    let { price } = req.query;
 
+    // 가격이 없으면 키움 API로 자동 조회
     if (!price || isNaN(price)) {
-      return res.status(400).json({
-        success: false,
-        error: '현재가(price)가 필요합니다. 예: ?price=50000'
-      });
+      console.log(`📊 ${stockCode} 현재가 자동 조회 중 (키움 API)...`);
+
+      const stockInfo = await kiwoomService.getStockInfo(stockCode);
+
+      if (stockInfo && stockInfo.currentPrice > 0) {
+        price = stockInfo.currentPrice;
+        console.log(`✅ ${stockCode} 현재가: ${price}원 (키움 API)`);
+      } else {
+        return res.status(400).json({
+          success: false,
+          error: '현재가 조회 실패. 직접 입력해주세요. 예: ?price=50000',
+          hint: '키움 API 인증 키 확인 필요'
+        });
+      }
     }
 
     console.log(`📊 저평가 분석 요청: ${stockCode}, 현재가: ${price}원`);
@@ -46,6 +58,52 @@ router.get('/analyze/:stockCode', async (req, res) => {
 
   } catch (error) {
     console.error('저평가 분석 API 오류:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * GET /api/undervalued/price/:stockCode
+ * 키움 API로 현재가만 조회
+ */
+router.get('/price/:stockCode', async (req, res) => {
+  try {
+    const { stockCode } = req.params;
+
+    console.log(`📊 ${stockCode} 현재가 조회 (키움 API)...`);
+
+    const stockInfo = await kiwoomService.getStockInfo(stockCode);
+
+    if (!stockInfo) {
+      return res.status(400).json({
+        success: false,
+        error: '주식 정보 조회 실패',
+        stockCode
+      });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        stockCode,
+        name: stockInfo.name,
+        currentPrice: stockInfo.currentPrice,
+        changeRate: stockInfo.changeRate,
+        changePrice: stockInfo.changePrice,
+        volume: stockInfo.volume,
+        marketCap: stockInfo.marketCap,
+        per: stockInfo.per,
+        pbr: stockInfo.pbr,
+        dataSource: 'KIWOOM_API',
+        timestamp: stockInfo.timestamp
+      }
+    });
+
+  } catch (error) {
+    console.error('현재가 조회 API 오류:', error);
     res.status(500).json({
       success: false,
       error: error.message
