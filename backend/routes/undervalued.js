@@ -25,10 +25,10 @@ router.get('/analyze/:stockCode', async (req, res) => {
     if (!price || isNaN(price)) {
       console.log(`📊 ${stockCode} 현재가 자동 조회 중 (키움 API)...`);
 
-      const stockInfo = await kiwoomService.getStockInfo(stockCode);
+      const currentPrice = await kiwoomService.getCurrentPrice(stockCode);
 
-      if (stockInfo && stockInfo.currentPrice > 0) {
-        price = stockInfo.currentPrice;
+      if (currentPrice && currentPrice > 0) {
+        price = currentPrice;
         console.log(`✅ ${stockCode} 현재가: ${price}원 (키움 API)`);
       } else {
         return res.status(400).json({
@@ -75,12 +75,12 @@ router.get('/price/:stockCode', async (req, res) => {
 
     console.log(`📊 ${stockCode} 현재가 조회 (키움 API)...`);
 
-    const stockInfo = await kiwoomService.getStockInfo(stockCode);
+    const currentPrice = await kiwoomService.getCurrentPrice(stockCode);
 
-    if (!stockInfo) {
+    if (!currentPrice || currentPrice <= 0) {
       return res.status(400).json({
         success: false,
-        error: '주식 정보 조회 실패',
+        error: '현재가 조회 실패',
         stockCode
       });
     }
@@ -89,16 +89,9 @@ router.get('/price/:stockCode', async (req, res) => {
       success: true,
       data: {
         stockCode,
-        name: stockInfo.name,
-        currentPrice: stockInfo.currentPrice,
-        changeRate: stockInfo.changeRate,
-        changePrice: stockInfo.changePrice,
-        volume: stockInfo.volume,
-        marketCap: stockInfo.marketCap,
-        per: stockInfo.per,
-        pbr: stockInfo.pbr,
+        currentPrice,
         dataSource: 'KIWOOM_API',
-        timestamp: stockInfo.timestamp
+        timestamp: new Date().toISOString()
       }
     });
 
