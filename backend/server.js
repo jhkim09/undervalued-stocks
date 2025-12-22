@@ -5,8 +5,6 @@ const cron = require('node-cron');
 require('dotenv').config();
 
 // 라우트 임포트
-const financialDataRoutes = require('./routes/financialData');
-const stockNamesRoutes = require('./routes/stockNames');
 const undervaluedRoutes = require('./routes/undervalued');
 
 const app = express();
@@ -46,8 +44,6 @@ mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/undervalu
 });
 
 // API 라우트
-app.use('/api/financial-data', financialDataRoutes);
-app.use('/api/stock-names', stockNamesRoutes);
 app.use('/api/undervalued', undervaluedRoutes);
 
 // Health Check

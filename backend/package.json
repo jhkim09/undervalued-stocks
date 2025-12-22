@@ -2,7 +2,10 @@
   "name": "undervalued-stocks",
   "version": "1.0.0",
   "description": "저평가주식 자동화 분석 시스템 - PER/PBR/비유동자산 기반",
-  "main": "index.js",
+  "main": "server.js",
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "scripts": {
     "start": "node --max-old-space-size=400 server.js",
     "dev": "nodemon --max-old-space-size=1024 server.js",
