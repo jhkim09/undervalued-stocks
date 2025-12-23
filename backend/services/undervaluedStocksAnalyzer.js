@@ -485,16 +485,25 @@ class UndervaluedStocksAnalyzer {
   async analyzeBulk(stocksWithPrice, options = {}) {
     const { batchSize = 10, onProgress } = options;
 
-    console.log(`\n🚀 저평가주식 일괄 분석 시작: ${stocksWithPrice.length}개 종목`);
+    // 중복 종목 제거 (stockCode 기준)
+    const seenCodes = new Set();
+    const uniqueStocks = stocksWithPrice.filter(s => {
+      if (seenCodes.has(s.stockCode)) return false;
+      seenCodes.add(s.stockCode);
+      return true;
+    });
+
+    console.log(`\n🚀 저평가주식 일괄 분석 시작: ${uniqueStocks.length}개 종목 (중복 ${stocksWithPrice.length - uniqueStocks.length}개 제거)`);
 
     const results = [];
     const undervalued = [];
     const failed = [];
+    const analyzedCodes = new Set(); // 분석 완료된 종목 추적
 
-    for (let i = 0; i < stocksWithPrice.length; i += batchSize) {
-      const batch = stocksWithPrice.slice(i, i + batchSize);
+    for (let i = 0; i < uniqueStocks.length; i += batchSize) {
+      const batch = uniqueStocks.slice(i, i + batchSize);
       const batchNum = Math.floor(i / batchSize) + 1;
-      const totalBatches = Math.ceil(stocksWithPrice.length / batchSize);
+      const totalBatches = Math.ceil(uniqueStocks.length / batchSize);
 
       console.log(`\n📦 배치 ${batchNum}/${totalBatches} (${batch.length}개 종목)`);
 
@@ -513,14 +522,14 @@ class UndervaluedStocksAnalyzer {
         if (onProgress) {
           onProgress({
             current: results.length + failed.length,
-            total: stocksWithPrice.length,
+            total: uniqueStocks.length,
             undervalued: undervalued.length
           });
         }
       }
 
       // 배치 간 대기
-      if (i + batchSize < stocksWithPrice.length) {
+      if (i + batchSize < uniqueStocks.length) {
         await this.delay(1000);
       }
     }
@@ -529,7 +538,7 @@ class UndervaluedStocksAnalyzer {
     undervalued.sort((a, b) => (a.grahamNumber || 999) - (b.grahamNumber || 999));
 
     const summary = {
-      total: stocksWithPrice.length,
+      total: uniqueStocks.length,
       analyzed: results.length,
       failed: failed.length,
       undervalued: undervalued.length,
