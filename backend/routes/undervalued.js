@@ -368,4 +368,86 @@ router.get('/test-kiwoom/:stockCode', async (req, res) => {
   }
 });
 
+/**
+ * GET /api/undervalued/collect-corp-codes
+ * DART에서 전체 기업코드 수집 (관리자용)
+ */
+router.get('/collect-corp-codes', async (req, res) => {
+  try {
+    const axios = require('axios');
+    const JSZip = require('jszip');
+    const stockListService = require('../services/stockListService');
+
+    console.log('DART 기업코드 수집 시작...');
+
+    // DART API에서 기업코드 ZIP 다운로드
+    const response = await axios.get('https://opendart.fss.or.kr/api/corpCode.xml', {
+      params: { crtfc_key: process.env.DART_API_KEY },
+      responseType: 'arraybuffer',
+      timeout: 30000
+    });
+
+    // ZIP 파일 파싱
+    const zip = new JSZip();
+    const contents = await zip.loadAsync(response.data);
+    const xmlFile = Object.keys(contents.files)[0];
+    const xmlText = await contents.files[xmlFile].async('text');
+
+    // 모든 상장기업 추출
+    const regex = /<list>[\s\S]*?<corp_code>([^<]+)<\/corp_code>[\s\S]*?<corp_name>([^<]+)<\/corp_name>[\s\S]*?<stock_code>\s*(\d{6})\s*<\/stock_code>[\s\S]*?<\/list>/g;
+
+    const corpMap = new Map();
+    let match;
+
+    while ((match = regex.exec(xmlText)) !== null) {
+      const [, corpCode, corpName, stockCode] = match;
+      const cleanCorpCode = corpCode.trim();
+      const cleanCorpName = corpName.trim();
+      const cleanStockCode = stockCode.trim();
+
+      if (!corpMap.has(cleanStockCode) || cleanCorpName.length < corpMap.get(cleanStockCode).corpName.length) {
+        corpMap.set(cleanStockCode, { corpCode: cleanCorpCode, corpName: cleanCorpName });
+      }
+    }
+
+    // 종목 리스트와 매칭
+    const stockList = stockListService.getUnifiedStockList();
+    const uniqueStocks = [...new Set(stockList)];
+
+    const matched = [];
+    const notFound = [];
+
+    for (const stockCode of uniqueStocks) {
+      if (corpMap.has(stockCode)) {
+        const info = corpMap.get(stockCode);
+        matched.push({ stockCode, corpCode: info.corpCode, corpName: info.corpName });
+      } else {
+        notFound.push(stockCode);
+      }
+    }
+
+    // 하드코딩용 코드 생성
+    let corpCodeOutput = '';
+    let sharesOutput = '';
+
+    for (const item of matched) {
+      corpCodeOutput += `'${item.stockCode}': { corpCode: '${item.corpCode}', corpName: '${item.corpName}' },\n`;
+    }
+
+    res.json({
+      success: true,
+      totalInDart: corpMap.size,
+      targetStocks: uniqueStocks.length,
+      matched: matched.length,
+      notFound: notFound.length,
+      notFoundList: notFound,
+      corpCodeData: corpCodeOutput
+    });
+
+  } catch (error) {
+    console.error('수집 오류:', error.message);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 module.exports = router;
