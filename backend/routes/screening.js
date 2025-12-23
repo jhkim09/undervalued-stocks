@@ -61,7 +61,7 @@ router.post('/run', async (req, res) => {
  */
 router.post('/run-sync', async (req, res) => {
   try {
-    const { market = 'ALL', limit = 50, sendEmail = false, batchSize = 5 } = req.body;
+    const { market = 'ALL', limit = 0, sendEmail = true, batchSize = 10 } = req.body;
 
     console.log(`📊 동기 스크리닝 요청: market=${market}, limit=${limit}`);
 
