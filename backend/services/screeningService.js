@@ -81,14 +81,25 @@ class ScreeningService {
         }
       });
 
-      // 4. 결과 정리
+      // 4. 결과 정리 - 비유동자산 보유 종목 별도 분류
+      const undervaluedWithLongTermAssets = analysisResult.undervalued.filter(
+        stock => stock.assetAnalysis?.hasOldAssets === true
+      );
+      const undervaluedWithoutLongTermAssets = analysisResult.undervalued.filter(
+        stock => stock.assetAnalysis?.hasOldAssets !== true
+      );
+
       const result = {
         undervalued: analysisResult.undervalued,
+        // 10년 이상 비유동자산/토지 보유 종목 별도 분류
+        undervaluedWithLongTermAssets,
+        undervaluedWithoutLongTermAssets,
         summary: {
           total: stocksWithPrice.length,
           analyzed: analysisResult.summary.analyzed,
           failed: analysisResult.summary.failed,
-          undervalued: analysisResult.summary.undervalued
+          undervalued: analysisResult.summary.undervalued,
+          withLongTermAssets: undervaluedWithLongTermAssets.length
         },
         market,
         analyzedAt: new Date().toISOString(),
@@ -103,18 +114,32 @@ class ScreeningService {
       console.log('='.repeat(60));
       console.log(`   분석 종목: ${result.summary.analyzed}개`);
       console.log(`   저평가 발견: ${result.summary.undervalued}개`);
+      console.log(`   ├─ 장기보유자산 보유: ${result.summary.withLongTermAssets}개`);
+      console.log(`   └─ 장기보유자산 미확인: ${result.summary.undervalued - result.summary.withLongTermAssets}개`);
       console.log(`   소요 시간: ${result.duration}초`);
 
-      if (result.undervalued.length > 0) {
-        console.log('\n🎯 저평가 종목:');
-        result.undervalued.slice(0, 10).forEach((stock, idx) => {
+      // 장기 보유 자산 종목 우선 표시
+      if (result.undervaluedWithLongTermAssets.length > 0) {
+        console.log('\n🏭 장기보유자산(토지/건물 10년+) 보유 저평가 종목:');
+        result.undervaluedWithLongTermAssets.slice(0, 10).forEach((stock, idx) => {
           console.log(`   ${idx + 1}. ${stock.name} (${stock.stockCode})`);
-          console.log(`      PSR: ${stock.PSR?.toFixed(2)} | PBR: ${stock.PBR?.toFixed(2)}`);
-          console.log(`      근거: ${stock.undervaluedReasons?.join(', ')}`);
+          console.log(`      PSR: ${stock.PSR?.toFixed(2)} | PER×PBR: ${stock.grahamNumber?.toFixed(2)}`);
+          console.log(`      자산: ${stock.assetAnalysis?.reason}`);
         });
+        if (result.undervaluedWithLongTermAssets.length > 10) {
+          console.log(`   ... 외 ${result.undervaluedWithLongTermAssets.length - 10}개`);
+        }
+      }
 
-        if (result.undervalued.length > 10) {
-          console.log(`   ... 외 ${result.undervalued.length - 10}개`);
+      // 일반 저평가 종목
+      if (result.undervaluedWithoutLongTermAssets.length > 0) {
+        console.log('\n🎯 기타 저평가 종목:');
+        result.undervaluedWithoutLongTermAssets.slice(0, 5).forEach((stock, idx) => {
+          console.log(`   ${idx + 1}. ${stock.name} (${stock.stockCode})`);
+          console.log(`      PSR: ${stock.PSR?.toFixed(2)} | PER×PBR: ${stock.grahamNumber?.toFixed(2)}`);
+        });
+        if (result.undervaluedWithoutLongTermAssets.length > 5) {
+          console.log(`   ... 외 ${result.undervaluedWithoutLongTermAssets.length - 5}개`);
         }
       }
 
