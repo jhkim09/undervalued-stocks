@@ -178,6 +178,17 @@ cron.schedule('0 7 20 11 *', async () => {
   }
 }, { timezone: "Asia/Seoul" });
 
+// 매주 월요일: 주간 저평가 스크리닝 (종가 변동 반영)
+// 분기 공시 외에도 주가 변동으로 저평가 진입/이탈 종목 체크
+cron.schedule('0 7 * * 1', async () => {
+  console.log('📊 [주간] 월요일 저평가 스크리닝 시작...');
+  try {
+    await screeningService.runFullScreening({ sendEmail: true, limit: 100 });
+  } catch (error) {
+    console.error('❌ 주간 스크리닝 실패:', error.message);
+  }
+}, { timezone: "Asia/Seoul" });
+
 app.listen(PORT, () => {
   console.log(`🚀 저평가주식 분석 서버 실행 중: port ${PORT}`);
   console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
