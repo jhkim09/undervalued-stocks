@@ -224,4 +224,39 @@ router.get('/criteria', (req, res) => {
   });
 });
 
+/**
+ * GET /api/undervalued/test-kiwoom/:stockCode
+ * 키움 ka10001 API 테스트 (상장주식수 포함)
+ */
+router.get('/test-kiwoom/:stockCode', async (req, res) => {
+  try {
+    const { stockCode } = req.params;
+
+    console.log(`🧪 키움 ka10001 테스트: ${stockCode}`);
+
+    const stockInfo = await kiwoomService.getStockInfo(stockCode);
+
+    if (stockInfo) {
+      res.json({
+        success: true,
+        data: stockInfo,
+        note: 'ka10001 API 응답'
+      });
+    } else {
+      res.status(400).json({
+        success: false,
+        error: 'ka10001 API 응답 없음',
+        stockCode
+      });
+    }
+
+  } catch (error) {
+    console.error('ka10001 테스트 오류:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
 module.exports = router;
