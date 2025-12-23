@@ -147,42 +147,50 @@ class UndervaluedStocksAnalyzer {
       const seenAccounts = new Set();
 
       dataList.forEach(item => {
-        const accountName = item.account_nm;
+        const accountName = item.account_nm || '';
+        const accountId = item.account_id || '';
         const amount = parseInt(item.thstrm_amount?.replace(/,/g, '') || '0');
         const amountBillion = amount / 100000000; // 억원
 
-        // 매출액
-        if (accountName === '매출액' && !seenAccounts.has('revenue')) {
+        // 매출액 (영업수익 포함 - 금융/보험사)
+        if ((accountName === '매출액' || accountName === '영업수익' || accountName === '수익(매출액)')
+            && !seenAccounts.has('revenue')) {
           result.revenue = amountBillion;
           seenAccounts.add('revenue');
         }
-        // 당기순이익
-        else if (accountName === '당기순이익' && !seenAccounts.has('netIncome')) {
+        // 당기순이익 (다양한 표현 처리)
+        else if (!seenAccounts.has('netIncome') && amountBillion !== 0 &&
+                 (accountName === '당기순이익' ||
+                  accountName === '당기순이익(손실)' ||
+                  accountName === '분기순이익' ||
+                  accountName === '반기순이익' ||
+                  accountName.includes('지배기업') && accountName.includes('순이익') ||
+                  (accountName.includes('당기순') && !accountName.includes('기타')))) {
           result.netIncome = amountBillion;
           seenAccounts.add('netIncome');
         }
         // 자본총계
-        else if (accountName === '자본총계' && !seenAccounts.has('totalEquity')) {
+        else if ((accountName === '자본총계' || accountName === '자본 총계') && !seenAccounts.has('totalEquity')) {
           result.totalEquity = amountBillion;
           seenAccounts.add('totalEquity');
         }
         // 자산총계
-        else if (accountName === '자산총계' && !seenAccounts.has('totalAssets')) {
+        else if ((accountName === '자산총계' || accountName === '자산 총계') && !seenAccounts.has('totalAssets')) {
           result.totalAssets = amountBillion;
           seenAccounts.add('totalAssets');
         }
         // 비유동자산
-        else if (accountName === '비유동자산' && !seenAccounts.has('nonCurrentAssets')) {
+        else if ((accountName === '비유동자산' || accountName === '비유동 자산') && !seenAccounts.has('nonCurrentAssets')) {
           result.nonCurrentAssets = amountBillion;
           seenAccounts.add('nonCurrentAssets');
         }
         // 유형자산
-        else if (accountName === '유형자산' && !seenAccounts.has('tangibleAssets')) {
+        else if ((accountName === '유형자산' || accountName === '유형 자산') && !seenAccounts.has('tangibleAssets')) {
           result.tangibleAssets = amountBillion;
           seenAccounts.add('tangibleAssets');
         }
         // 무형자산
-        else if (accountName === '무형자산' && !seenAccounts.has('intangibleAssets')) {
+        else if ((accountName === '무형자산' || accountName === '무형 자산') && !seenAccounts.has('intangibleAssets')) {
           result.intangibleAssets = amountBillion;
           seenAccounts.add('intangibleAssets');
         }
