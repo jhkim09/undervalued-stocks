@@ -141,7 +141,8 @@ class UndervaluedStocksAnalyzer {
         intangibleAssets: 0,   // 무형자산
         investmentAssets: 0,   // 투자자산
         land: 0,               // 토지
-        buildings: 0           // 건물
+        buildings: 0,          // 건물
+        interestIncome: 0      // 이자수익 (금융회사용)
       };
 
       const seenAccounts = new Set();
@@ -152,11 +153,16 @@ class UndervaluedStocksAnalyzer {
         const amount = parseInt(item.thstrm_amount?.replace(/,/g, '') || '0');
         const amountBillion = amount / 100000000; // 억원
 
-        // 매출액 (영업수익 포함 - 금융/보험사)
-        if ((accountName === '매출액' || accountName === '영업수익' || accountName === '수익(매출액)')
-            && !seenAccounts.has('revenue')) {
+        // 매출액 (영업수익 포함 - 금융/보험사는 이자수익 사용)
+        if (!seenAccounts.has('revenue') &&
+            (accountName === '매출액' || accountName === '영업수익' || accountName === '수익(매출액)')) {
           result.revenue = amountBillion;
           seenAccounts.add('revenue');
+        }
+        // 금융회사 대체: 이자수익 (매출액이 없는 경우만)
+        else if (accountName === '이자수익' && !seenAccounts.has('revenue') && !seenAccounts.has('interestIncome')) {
+          result.interestIncome = amountBillion;
+          seenAccounts.add('interestIncome');
         }
         // 당기순이익 (다양한 표현 처리)
         else if (!seenAccounts.has('netIncome') && amountBillion !== 0 &&
@@ -205,6 +211,13 @@ class UndervaluedStocksAnalyzer {
           seenAccounts.add('buildings');
         }
       });
+
+      // 금융회사: 매출액이 없으면 이자수익으로 대체
+      if (result.revenue === 0 && result.interestIncome > 0) {
+        result.revenue = result.interestIncome;
+        result.revenueSource = 'interestIncome';
+        console.log(`💰 금융회사: 이자수익 ${result.interestIncome.toLocaleString()}억을 매출액으로 사용`);
+      }
 
       console.log(`📋 재무데이터: 매출 ${result.revenue.toLocaleString()}억, 순이익 ${result.netIncome.toLocaleString()}억, 자본 ${result.totalEquity.toLocaleString()}억`);
       console.log(`📋 비유동자산: ${result.nonCurrentAssets.toLocaleString()}억 (유형 ${result.tangibleAssets.toLocaleString()}억, 토지 ${result.land.toLocaleString()}억)`);
