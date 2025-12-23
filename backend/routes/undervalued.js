@@ -283,6 +283,57 @@ router.get('/test-dart-shares/:stockCode', async (req, res) => {
 });
 
 /**
+ * GET /api/undervalued/test-financials/:stockCode
+ * DART 재무제표 계정명 전체 조회 (디버깅용)
+ */
+router.get('/test-financials/:stockCode', async (req, res) => {
+  try {
+    const { stockCode } = req.params;
+    const { year = '2024' } = req.query;
+    const axios = require('axios');
+    const dartService = require('../services/dartService');
+
+    const corpInfo = await dartService.getCorpCode(stockCode);
+    if (!corpInfo) {
+      return res.status(400).json({ success: false, error: '기업코드 없음' });
+    }
+
+    const apiKey = process.env.DART_API_KEY;
+    const response = await axios.get('https://opendart.fss.or.kr/api/fnlttSinglAcnt.json', {
+      params: {
+        crtfc_key: apiKey,
+        corp_code: corpInfo.corpCode,
+        bsns_year: year,
+        reprt_code: '11011',
+        fs_div: 'CFS'
+      }
+    });
+
+    // 계정명만 추출
+    const accounts = response.data.list?.map(item => ({
+      name: item.account_nm,
+      id: item.account_id,
+      amount: item.thstrm_amount,
+      sj_nm: item.sj_nm  // 재무제표 구분 (재무상태표, 손익계산서 등)
+    })) || [];
+
+    res.json({
+      success: true,
+      stockCode,
+      corpCode: corpInfo.corpCode,
+      corpName: corpInfo.corpName,
+      year,
+      status: response.data.status,
+      accountCount: accounts.length,
+      accounts
+    });
+
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
  * GET /api/undervalued/test-kiwoom/:stockCode
  * 키움 ka10001 API 테스트 (상장주식수 포함)
  */
