@@ -225,6 +225,64 @@ router.get('/criteria', (req, res) => {
 });
 
 /**
+ * GET /api/undervalued/test-dart-shares/:stockCode
+ * DART stockTotqySttus API 테스트 (상장주식수)
+ */
+router.get('/test-dart-shares/:stockCode', async (req, res) => {
+  try {
+    const { stockCode } = req.params;
+    const { year = '2024' } = req.query;
+    const axios = require('axios');
+    const dartService = require('../services/dartService');
+
+    console.log(`🧪 DART stockTotqySttus 테스트: ${stockCode}, year=${year}`);
+
+    // 1. 기업코드 조회
+    const corpInfo = await dartService.getCorpCode(stockCode);
+    if (!corpInfo) {
+      return res.status(400).json({
+        success: false,
+        error: '기업코드 조회 실패',
+        stockCode
+      });
+    }
+
+    console.log(`✅ 기업코드: ${corpInfo.corpCode}, ${corpInfo.corpName}`);
+
+    // 2. DART stockTotqySttus API 직접 호출
+    const apiKey = process.env.DART_API_KEY;
+    const url = `https://opendart.fss.or.kr/api/stockTotqySttus.json`;
+
+    const response = await axios.get(url, {
+      params: {
+        crtfc_key: apiKey,
+        corp_code: corpInfo.corpCode,
+        bsns_year: year,
+        reprt_code: '11011'
+      }
+    });
+
+    console.log(`📋 DART API 응답:`, JSON.stringify(response.data, null, 2));
+
+    res.json({
+      success: true,
+      stockCode,
+      corpCode: corpInfo.corpCode,
+      corpName: corpInfo.corpName,
+      year,
+      dartResponse: response.data
+    });
+
+  } catch (error) {
+    console.error('DART shares 테스트 오류:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
  * GET /api/undervalued/test-kiwoom/:stockCode
  * 키움 ka10001 API 테스트 (상장주식수 포함)
  */
