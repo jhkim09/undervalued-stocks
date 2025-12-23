@@ -329,51 +329,58 @@ class KiwoomService {
     }
   }
   
-  // 주식 현재가 조회 (일별주가 API 사용 - 정확한 종가)
+  // 주식 현재가 조회 (Yahoo Finance 우선 → 키움 API 백업)
   async getCurrentPrice(symbol) {
     try {
-      if (!this.isConnected) {
-        return this.getSimulationPrice(symbol);
+      // 1. Yahoo Finance로 실제 종가 조회 (가장 정확)
+      const YahooFinanceService = require('./yahooFinanceService');
+      const yahooPrice = await YahooFinanceService.getCurrentPrice(symbol);
+
+      if (yahooPrice && yahooPrice > 0) {
+        console.log(`✅ Yahoo ${symbol} 종가: ${yahooPrice.toLocaleString()}원`);
+        return yahooPrice;
       }
-      
-      // 키움 일별주가 조회 API (ka10086) - 정확한 당일 종가
-      const url = `${this.useMock ? this.mockURL : this.baseURL}/api/dostk/mrkcond`;
-      
-      // 오늘 날짜 (YYYYMMDD)
-      const today = new Date();
-      const queryDate = today.getFullYear().toString() + 
-                       (today.getMonth() + 1).toString().padStart(2, '0') + 
-                       today.getDate().toString().padStart(2, '0');
-      
-      const response = await axios.post(url, {
-        stk_cd: symbol,
-        qry_dt: queryDate,
-        indc_tp: '0'
-      }, {
-        headers: {
-          'Content-Type': 'application/json;charset=UTF-8',
-          'authorization': `Bearer ${this.accessToken}`,
-          'cont-yn': 'N',
-          'next-key': '',
-          'api-id': 'ka10086'
-        },
-        timeout: 10000
-      });
-      
-      if (response.data.return_code === 0 && response.data.daly_stkpc?.length > 0) {
-        // 첫 번째 데이터 (최신일)의 종가
-        const latestData = response.data.daly_stkpc[0];
-        const closePrice = parseInt(latestData.close_pric.replace(/[+-]/g, ''));
-        
-        console.log(`✅ 키움 ${symbol} 종가: ${closePrice.toLocaleString()}원 (${latestData.date})`);
-        return closePrice;
-      } else {
-        throw new Error(`키움 일별주가 조회 실패: ${response.data.return_msg}`);
+
+      // 2. 키움 API 시도
+      if (this.isConnected) {
+        const url = `${this.useMock ? this.mockURL : this.baseURL}/api/dostk/mrkcond`;
+
+        const today = new Date();
+        const queryDate = today.getFullYear().toString() +
+                         (today.getMonth() + 1).toString().padStart(2, '0') +
+                         today.getDate().toString().padStart(2, '0');
+
+        const response = await axios.post(url, {
+          stk_cd: symbol,
+          qry_dt: queryDate,
+          indc_tp: '0'
+        }, {
+          headers: {
+            'Content-Type': 'application/json;charset=UTF-8',
+            'authorization': `Bearer ${this.accessToken}`,
+            'cont-yn': 'N',
+            'next-key': '',
+            'api-id': 'ka10086'
+          },
+          timeout: 10000
+        });
+
+        if (response.data.return_code === 0 && response.data.daly_stkpc?.length > 0) {
+          const latestData = response.data.daly_stkpc[0];
+          const closePrice = parseInt(latestData.close_pric.replace(/[+-]/g, ''));
+
+          console.log(`✅ 키움 ${symbol} 종가: ${closePrice.toLocaleString()}원 (${latestData.date})`);
+          return closePrice;
+        }
       }
-      
+
+      // 3. 모든 소스 실패시 null 반환 (시뮬레이션 사용 안함!)
+      console.log(`⚠️ ${symbol}: 실제 가격 조회 실패 (분석 제외)`);
+      return null;
+
     } catch (error) {
-      console.error(`키움 가격 조회 실패 (${symbol}):`, error.message);
-      return this.getSimulationPrice(symbol);
+      console.error(`가격 조회 실패 (${symbol}):`, error.message);
+      return null; // 시뮬레이션 대신 null 반환
     }
   }
   
