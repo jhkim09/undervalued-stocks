@@ -210,11 +210,18 @@ class DartService {
   // 기업 고유번호 조회 (종목코드 → 기업코드 변환) - 직접 조회 방식
   async getCorpCode(stockCode) {
     try {
+      // 분석 제외 종목 (corpCode 매핑 오류)
+      const excludedStocks = ['021240']; // 코웨이
+      if (excludedStocks.includes(stockCode)) {
+        console.log(`⚠️ ${stockCode}: 분석 제외 종목 (corpCode 매핑 오류)`);
+        return null;
+      }
+
       const cacheKey = `corp_${stockCode}`;
       if (this.cache.has(cacheKey)) {
         return this.cache.get(cacheKey);
       }
-      
+
       // 알려진 주요 종목 기업코드 (시가총액 상위 100개+)
       const knownCorpCodes = {
         // 코스피 시가총액 상위
@@ -275,7 +282,7 @@ class DartService {
         '010620': { corpCode: '00164609', corpName: 'HD현대미포' },
         '000880': { corpCode: '00161056', corpName: '한화' },
         '002790': { corpCode: '00154462', corpName: '아모레G' },
-        // '021240': 코웨이 - ZIP에서 자동 조회 (잘못된 매핑 제거)
+        // '021240': 코웨이 - corpCode 매핑 오류로 분석 제외 (추후 수정 필요)
         '001040': { corpCode: '00148540', corpName: 'CJ' },
         '004170': { corpCode: '00136378', corpName: '신세계' },
         '005940': { corpCode: '00117376', corpName: 'NH투자증권' },
