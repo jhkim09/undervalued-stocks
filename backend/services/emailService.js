@@ -112,15 +112,20 @@ class EmailService {
    * HTML 이메일 본문 생성
    */
   generateReportHtml(undervalued, summary, quarterName, analyzedAt, withAssets = [], withoutAssets = []) {
-    // 장기 보유 자산 보유 종목 테이블 생성
+    // 장기 보유 자산 보유 종목 테이블 생성 (종합점수순 정렬됨)
     const assetStockRows = withAssets.map((stock, idx) => {
       const marketCap = stock.marketCap || 0;
       const tangible = stock.assetAnalysis?.tangibleAssets || 0;
       const ratio = marketCap > 0 ? ((tangible / marketCap) * 100).toFixed(0) : 0;
+      const score = stock.compositeScore || 0;
+      const scoreColor = score >= 70 ? '#e74c3c' : score >= 50 ? '#f39c12' : score >= 30 ? '#27ae60' : '#95a5a6';
 
       return `
       <tr style="border-bottom: 2px solid #f5e6d3; background: ${idx % 2 === 0 ? '#fffbf0' : '#fff8e8'};">
         <td style="padding: 15px 10px; text-align: center; font-weight: bold; font-size: 16px;">${idx + 1}</td>
+        <td style="padding: 15px 10px; text-align: center;">
+          <div style="background: ${scoreColor}; color: white; padding: 8px 12px; border-radius: 20px; font-size: 16px; font-weight: bold;">${score.toFixed(1)}</div>
+        </td>
         <td style="padding: 15px 10px;">
           <div style="font-size: 16px; font-weight: bold; color: #333;">${stock.name}</div>
           <div style="font-size: 13px; color: #888; margin-top: 3px;">${stock.stockCode}</div>
@@ -134,7 +139,6 @@ class EmailService {
         </td>
         <td style="padding: 15px 10px; text-align: right;">
           <div style="font-size: 14px; font-weight: bold; color: #2c3e50;">${Math.round(marketCap).toLocaleString()}억</div>
-          <div style="font-size: 12px; color: #666;">시총</div>
         </td>
         <td style="padding: 15px 10px; text-align: right;">
           <div style="font-size: 14px; font-weight: bold; color: #8b4513;">${Math.round(tangible).toLocaleString()}억</div>
@@ -225,13 +229,14 @@ class EmailService {
       <table>
         <thead>
           <tr>
-            <th style="width: 50px; background: #8b4513; text-align: center;">#</th>
-            <th style="background: #8b4513; min-width: 100px;">종목명</th>
-            <th style="text-align: right; background: #8b4513; min-width: 80px;">현재가</th>
-            <th style="text-align: center; background: #8b4513; width: 70px;">PSR</th>
-            <th style="text-align: center; background: #8b4513; width: 80px;">PER×PBR</th>
-            <th style="text-align: right; background: #8b4513; width: 90px;">시총</th>
-            <th style="text-align: right; background: #8b4513; width: 100px;">유형자산(%)</th>
+            <th style="width: 40px; background: #8b4513; text-align: center;">#</th>
+            <th style="width: 70px; background: #d4a574; text-align: center;">종합점수</th>
+            <th style="background: #8b4513; min-width: 90px;">종목명</th>
+            <th style="text-align: right; background: #8b4513; min-width: 70px;">현재가</th>
+            <th style="text-align: center; background: #8b4513; width: 60px;">PSR</th>
+            <th style="text-align: center; background: #8b4513; width: 70px;">PER×PBR</th>
+            <th style="text-align: right; background: #8b4513; width: 70px;">시총</th>
+            <th style="text-align: right; background: #8b4513; width: 90px;">유형자산(%)</th>
           </tr>
         </thead>
         <tbody>

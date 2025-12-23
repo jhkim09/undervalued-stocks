@@ -81,17 +81,21 @@ class ScreeningService {
         }
       });
 
-      // 4. 결과 정리 - 비유동자산 보유 종목 별도 분류
-      const undervaluedWithLongTermAssets = analysisResult.undervalued.filter(
+      // 4. 결과 정리 - 종합점수 내림차순 정렬 후 분류
+      const sortedUndervalued = [...analysisResult.undervalued].sort(
+        (a, b) => (b.compositeScore || 0) - (a.compositeScore || 0)
+      );
+
+      const undervaluedWithLongTermAssets = sortedUndervalued.filter(
         stock => stock.assetAnalysis?.hasOldAssets === true
       );
-      const undervaluedWithoutLongTermAssets = analysisResult.undervalued.filter(
+      const undervaluedWithoutLongTermAssets = sortedUndervalued.filter(
         stock => stock.assetAnalysis?.hasOldAssets !== true
       );
 
       const result = {
-        undervalued: analysisResult.undervalued,
-        // 10년 이상 비유동자산/토지 보유 종목 별도 분류
+        undervalued: sortedUndervalued,
+        // 숨겨진 자산가치 보유 종목 별도 분류
         undervaluedWithLongTermAssets,
         undervaluedWithoutLongTermAssets,
         summary: {

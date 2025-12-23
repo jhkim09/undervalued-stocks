@@ -90,10 +90,13 @@ class UndervaluedStocksAnalyzer {
         isUndervalued,
         undervaluedReasons: this.getUndervaluedReasons(valuationMetrics, assetAnalysis),
 
+        // 종합점수 계산
+        compositeScore: this.calculateCompositeScore(valuationMetrics, assetAnalysis),
+
         analyzedAt: new Date().toISOString()
       };
 
-      console.log(`✅ ${stockCode} 분석 완료: PSR=${valuationMetrics.PSR?.toFixed(2)}, PER×PBR=${valuationMetrics.grahamNumber?.toFixed(2)}`);
+      console.log(`✅ ${stockCode} 분석 완료: PSR=${valuationMetrics.PSR?.toFixed(2)}, PER×PBR=${valuationMetrics.grahamNumber?.toFixed(2)}, 종합=${result.compositeScore?.toFixed(1)}점`);
 
       return result;
 
@@ -442,6 +445,40 @@ class UndervaluedStocksAnalyzer {
     }
 
     return reasons;
+  }
+
+  /**
+   * 종합점수 계산
+   * PSR점수(30%) + 그레이엄점수(40%) + 자산가치점수(30%)
+   * 점수가 높을수록 투자 매력도 높음
+   */
+  calculateCompositeScore(metrics, assetAnalysis) {
+    let psrScore = 0;
+    let grahamScore = 0;
+    let assetScore = 0;
+
+    // PSR 점수 (30%): PSR이 낮을수록 높은 점수
+    // PSR 0 = 100점, PSR 0.5 = 0점, PSR > 0.5 = 음수 → 0점 처리
+    if (metrics.PSR !== null && metrics.PSR >= 0) {
+      psrScore = Math.max(0, ((0.5 - metrics.PSR) / 0.5) * 100);
+    }
+
+    // 그레이엄 점수 (40%): PER×PBR이 낮을수록 높은 점수
+    // PER×PBR 0 = 100점, 22.5 = 0점, > 22.5 = 음수 → 0점 처리
+    if (metrics.grahamNumber !== null && metrics.grahamNumber >= 0) {
+      grahamScore = Math.max(0, ((22.5 - metrics.grahamNumber) / 22.5) * 100);
+    }
+
+    // 자산가치 점수 (30%): 유형자산/시총 비율
+    // 비율이 높을수록 숨겨진 자산가치 (최대 100점)
+    if (assetAnalysis?.tangibleToMarketCapRatio > 0) {
+      assetScore = Math.min(100, assetAnalysis.tangibleToMarketCapRatio);
+    }
+
+    // 종합점수 = 가중 평균
+    const compositeScore = (psrScore * 0.3) + (grahamScore * 0.4) + (assetScore * 0.3);
+
+    return Math.round(compositeScore * 10) / 10; // 소수점 1자리
   }
 
   /**
