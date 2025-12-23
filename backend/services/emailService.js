@@ -121,28 +121,26 @@ class EmailService {
       const scoreColor = score >= 70 ? '#e74c3c' : score >= 50 ? '#f39c12' : score >= 30 ? '#27ae60' : '#95a5a6';
 
       return `
-      <tr style="border-bottom: 2px solid #f5e6d3; background: ${idx % 2 === 0 ? '#fffbf0' : '#fff8e8'};">
-        <td style="padding: 15px 10px; text-align: center; font-weight: bold; font-size: 16px;">${idx + 1}</td>
-        <td style="padding: 15px 10px; text-align: center;">
-          <div style="background: ${scoreColor}; color: white; padding: 8px 12px; border-radius: 20px; font-size: 16px; font-weight: bold;">${score.toFixed(1)}</div>
+      <tr style="border-bottom: 1px solid #f5e6d3; background: ${idx % 2 === 0 ? '#fffbf0' : '#fff8e8'};">
+        <td style="padding: 8px 4px; text-align: center; font-weight: bold; font-size: 12px;">${idx + 1}</td>
+        <td style="padding: 8px 4px; text-align: center;">
+          <div style="background: ${scoreColor}; color: white; padding: 4px 6px; border-radius: 12px; font-size: 13px; font-weight: bold; white-space: nowrap;">${score.toFixed(1)}</div>
         </td>
-        <td style="padding: 15px 10px;">
-          <div style="font-size: 16px; font-weight: bold; color: #333;">${stock.name}</div>
-          <div style="font-size: 13px; color: #888; margin-top: 3px;">${stock.stockCode}</div>
+        <td style="padding: 8px 4px;">
+          <div style="font-size: 13px; font-weight: bold; color: #333;">${stock.name}</div>
+          <div style="font-size: 10px; color: #888;">${stock.stockCode}</div>
         </td>
-        <td style="padding: 15px 10px; text-align: right; font-size: 15px; font-weight: bold;">${stock.currentPrice?.toLocaleString()}<span style="font-size: 12px; color: #666;">원</span></td>
-        <td style="padding: 15px 10px; text-align: center;">
-          <span style="background: ${stock.PSR <= 0.5 ? '#e74c3c' : '#95a5a6'}; color: white; padding: 5px 10px; border-radius: 15px; font-size: 14px; font-weight: bold;">${stock.PSR?.toFixed(2) || '-'}</span>
+        <td style="padding: 8px 4px; text-align: right; font-size: 12px; font-weight: bold;">${stock.currentPrice?.toLocaleString()}</td>
+        <td style="padding: 8px 4px; text-align: center;">
+          <span style="background: ${stock.PSR <= 0.5 ? '#e74c3c' : '#95a5a6'}; color: white; padding: 3px 6px; border-radius: 10px; font-size: 11px; font-weight: bold;">${stock.PSR?.toFixed(2) || '-'}</span>
         </td>
-        <td style="padding: 15px 10px; text-align: center;">
-          <span style="background: ${stock.grahamNumber <= 22.5 ? '#27ae60' : '#95a5a6'}; color: white; padding: 5px 10px; border-radius: 15px; font-size: 14px; font-weight: bold;">${stock.grahamNumber?.toFixed(1) || '-'}</span>
+        <td style="padding: 8px 4px; text-align: center;">
+          <span style="background: ${stock.grahamNumber <= 22.5 ? '#27ae60' : '#95a5a6'}; color: white; padding: 3px 6px; border-radius: 10px; font-size: 11px; font-weight: bold;">${stock.grahamNumber?.toFixed(1) || '-'}</span>
         </td>
-        <td style="padding: 15px 10px; text-align: right;">
-          <div style="font-size: 14px; font-weight: bold; color: #2c3e50;">${Math.round(marketCap).toLocaleString()}억</div>
-        </td>
-        <td style="padding: 15px 10px; text-align: right;">
-          <div style="font-size: 14px; font-weight: bold; color: #8b4513;">${Math.round(tangible).toLocaleString()}억</div>
-          <div style="font-size: 12px; color: #27ae60;">(${ratio}%)</div>
+        <td style="padding: 8px 4px; text-align: right; font-size: 11px; font-weight: bold; color: #2c3e50;">${Math.round(marketCap).toLocaleString()}억</td>
+        <td style="padding: 8px 4px; text-align: right;">
+          <div style="font-size: 11px; font-weight: bold; color: #8b4513;">${Math.round(tangible).toLocaleString()}억</div>
+          <div style="font-size: 10px; color: #27ae60;">(${ratio}%)</div>
         </td>
       </tr>
     `}).join('');
@@ -226,17 +224,17 @@ class EmailService {
         <h2 style="color: white; margin: 0; font-size: 20px;">🏭 숨겨진 자산가치 보유 종목</h2>
         <p style="color: rgba(255,255,255,0.9); font-size: 13px; margin: 8px 0 0 0;">재평가잉여금=0 + 유형자산 1000억+ → 재평가 안 한 토지/건물 보유 추정</p>
       </div>
-      <table>
+      <table style="width: 100%; table-layout: fixed;">
         <thead>
           <tr>
-            <th style="width: 40px; background: #8b4513; text-align: center;">#</th>
-            <th style="width: 70px; background: #d4a574; text-align: center;">종합점수</th>
-            <th style="background: #8b4513; min-width: 90px;">종목명</th>
-            <th style="text-align: right; background: #8b4513; min-width: 70px;">현재가</th>
-            <th style="text-align: center; background: #8b4513; width: 60px;">PSR</th>
-            <th style="text-align: center; background: #8b4513; width: 70px;">PER×PBR</th>
-            <th style="text-align: right; background: #8b4513; width: 70px;">시총</th>
-            <th style="text-align: right; background: #8b4513; width: 90px;">유형자산(%)</th>
+            <th style="width: 30px; background: #8b4513; text-align: center; font-size: 12px;">#</th>
+            <th style="width: 55px; background: #d4a574; text-align: center; font-size: 11px;">점수</th>
+            <th style="background: #8b4513; width: 80px; font-size: 12px;">종목</th>
+            <th style="text-align: right; background: #8b4513; width: 75px; font-size: 12px;">현재가</th>
+            <th style="text-align: center; background: #8b4513; width: 50px; font-size: 11px;">PSR</th>
+            <th style="text-align: center; background: #8b4513; width: 55px; font-size: 10px;">PERxPBR</th>
+            <th style="text-align: right; background: #8b4513; width: 60px; font-size: 12px;">시총</th>
+            <th style="text-align: right; background: #8b4513; width: 70px; font-size: 11px;">유형자산</th>
           </tr>
         </thead>
         <tbody>
