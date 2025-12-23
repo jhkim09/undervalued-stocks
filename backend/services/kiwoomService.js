@@ -44,6 +44,9 @@ class KiwoomService {
         timeout: 10000
       });
 
+      console.log(`📋 ka10001 응답 status:`, response.status);
+      console.log(`📋 ka10001 응답 data:`, JSON.stringify(response.data, null, 2).substring(0, 500));
+
       if (response.data && response.data.output) {
         const stockData = response.data.output;
         
@@ -77,15 +80,16 @@ class KiwoomService {
       }
 
       console.log(`❌ ${stockCode} 키움 API 응답 데이터 없음`);
+      console.log(`📋 전체 응답:`, JSON.stringify(response.data, null, 2));
       return null;
 
     } catch (error) {
       console.error(`❌ ${stockCode} 키움 주식정보 조회 실패:`, error.message);
-      
+
       if (error.response) {
-        console.error(`   HTTP ${error.response.status}:`, error.response.data);
+        console.error(`   HTTP ${error.response.status}:`, JSON.stringify(error.response.data, null, 2));
       }
-      
+
       return null;
     }
   }
