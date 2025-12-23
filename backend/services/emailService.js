@@ -113,7 +113,12 @@ class EmailService {
    */
   generateReportHtml(undervalued, summary, quarterName, analyzedAt, withAssets = [], withoutAssets = []) {
     // 장기 보유 자산 보유 종목 테이블 생성
-    const assetStockRows = withAssets.map((stock, idx) => `
+    const assetStockRows = withAssets.map((stock, idx) => {
+      const marketCap = stock.marketCap || 0;
+      const tangible = stock.assetAnalysis?.tangibleAssets || 0;
+      const ratio = marketCap > 0 ? ((tangible / marketCap) * 100).toFixed(0) : 0;
+
+      return `
       <tr style="border-bottom: 2px solid #f5e6d3; background: ${idx % 2 === 0 ? '#fffbf0' : '#fff8e8'};">
         <td style="padding: 15px 10px; text-align: center; font-weight: bold; font-size: 16px;">${idx + 1}</td>
         <td style="padding: 15px 10px;">
@@ -127,9 +132,16 @@ class EmailService {
         <td style="padding: 15px 10px; text-align: center;">
           <span style="background: ${stock.grahamNumber <= 22.5 ? '#27ae60' : '#95a5a6'}; color: white; padding: 5px 10px; border-radius: 15px; font-size: 14px; font-weight: bold;">${stock.grahamNumber?.toFixed(1) || '-'}</span>
         </td>
-        <td style="padding: 15px 10px; font-size: 13px; color: #8b4513; line-height: 1.5;">${stock.assetAnalysis?.reason || '-'}</td>
+        <td style="padding: 15px 10px; text-align: right;">
+          <div style="font-size: 14px; font-weight: bold; color: #2c3e50;">${Math.round(marketCap).toLocaleString()}억</div>
+          <div style="font-size: 12px; color: #666;">시총</div>
+        </td>
+        <td style="padding: 15px 10px; text-align: right;">
+          <div style="font-size: 14px; font-weight: bold; color: #8b4513;">${Math.round(tangible).toLocaleString()}억</div>
+          <div style="font-size: 12px; color: #27ae60;">(${ratio}%)</div>
+        </td>
       </tr>
-    `).join('');
+    `}).join('');
 
     // 일반 저평가 종목 테이블 생성
     const otherStockRows = withoutAssets.map((stock, idx) => `
@@ -207,18 +219,19 @@ class EmailService {
 
       ${withAssets.length > 0 ? `
       <div style="background: linear-gradient(135deg, #d4a574, #c49a6c); padding: 20px; border-radius: 12px; margin-bottom: 15px;">
-        <h2 style="color: white; margin: 0; font-size: 20px;">🏭 장기보유자산 보유 저평가 종목</h2>
-        <p style="color: rgba(255,255,255,0.9); font-size: 13px; margin: 8px 0 0 0;">토지/건물 10년+ 보유 확인 - 실질 자산가치 높음</p>
+        <h2 style="color: white; margin: 0; font-size: 20px;">🏭 숨겨진 자산가치 보유 종목</h2>
+        <p style="color: rgba(255,255,255,0.9); font-size: 13px; margin: 8px 0 0 0;">재평가잉여금=0 + 유형자산 1000억+ → 재평가 안 한 토지/건물 보유 추정</p>
       </div>
       <table>
         <thead>
           <tr>
             <th style="width: 50px; background: #8b4513; text-align: center;">#</th>
-            <th style="background: #8b4513; min-width: 120px;">종목명</th>
-            <th style="text-align: right; background: #8b4513; min-width: 100px;">현재가</th>
-            <th style="text-align: center; background: #8b4513; width: 80px;">PSR</th>
-            <th style="text-align: center; background: #8b4513; width: 90px;">PER×PBR</th>
-            <th style="background: #8b4513;">보유자산 상세</th>
+            <th style="background: #8b4513; min-width: 100px;">종목명</th>
+            <th style="text-align: right; background: #8b4513; min-width: 80px;">현재가</th>
+            <th style="text-align: center; background: #8b4513; width: 70px;">PSR</th>
+            <th style="text-align: center; background: #8b4513; width: 80px;">PER×PBR</th>
+            <th style="text-align: right; background: #8b4513; width: 90px;">시총</th>
+            <th style="text-align: right; background: #8b4513; width: 100px;">유형자산(%)</th>
           </tr>
         </thead>
         <tbody>
