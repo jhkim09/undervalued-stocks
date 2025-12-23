@@ -280,7 +280,8 @@ class UndervaluedStocksAnalyzer {
     try {
       await this.delay(this.rateLimitDelay);
 
-      const response = await axios.get(`${this.baseURL}/fnlttSinglAcnt.json`, {
+      // fnlttSinglAcntAll API 사용 (유형자산 등 세부 항목 포함)
+      const response = await axios.get(`${this.baseURL}/fnlttSinglAcntAll.json`, {
         params: {
           crtfc_key: this.apiKey,
           corp_code: corpCode,
@@ -314,9 +315,11 @@ class UndervaluedStocksAnalyzer {
         reason: ''
       };
 
+      // 재무상태표(BS) 항목만 필터링
+      const bsItems = dataList.filter(item => item.sj_div === 'BS');
       const seenAccounts = new Set();
 
-      dataList.forEach(item => {
+      bsItems.forEach(item => {
         const accountName = item.account_nm || '';
         const amount = parseInt(item.thstrm_amount?.replace(/,/g, '') || '0') / 100000000;
 
