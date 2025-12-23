@@ -192,6 +192,20 @@ router.post('/test-email', async (req, res) => {
 });
 
 /**
+ * POST /api/screening/reset
+ * 스크리닝 상태 리셋 (비상용)
+ */
+router.post('/reset', (req, res) => {
+  console.log('⚠️ 스크리닝 상태 리셋 요청');
+  const result = screeningService.reset();
+  res.json({
+    success: true,
+    message: '스크리닝 상태가 리셋되었습니다.',
+    ...result
+  });
+});
+
+/**
  * GET /api/screening/schedule
  * 스크리닝 스케줄 정보
  */

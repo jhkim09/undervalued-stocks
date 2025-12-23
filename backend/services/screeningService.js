@@ -199,6 +199,15 @@ class ScreeningService {
       } : null
     };
   }
+
+  /**
+   * 스크리닝 상태 리셋 (비상용)
+   */
+  reset() {
+    console.log('⚠️ 스크리닝 상태 수동 리셋');
+    this.isRunning = false;
+    return { reset: true, isRunning: this.isRunning };
+  }
 }
 
 module.exports = new ScreeningService();
