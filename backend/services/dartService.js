@@ -706,11 +706,43 @@ class DartService {
       } catch (fallbackError) {
         console.log(`⚠️ ${stockCode} Fallback API도 실패: ${fallbackError.message}`);
       }
-      
+
       // 2024년 실패 시 2023년 재시도
       if (year === 2024) {
         console.log(`📊 ${stockCode} 2024년 데이터 없음, 2023년 재시도...`);
         return await this.getSharesOutstanding(stockCode, 2023);
+      }
+
+      // Yahoo Finance에서 시가총액/현재가로 상장주식수 역산
+      try {
+        const YahooFinanceService = require('./yahooFinanceService');
+        const yahooSymbol = `${stockCode}.KS`;
+
+        const response = await axios.get(`https://query1.finance.yahoo.com/v8/finance/chart/${yahooSymbol}`, {
+          params: { range: '1d' },
+          timeout: 5000
+        });
+
+        const meta = response.data?.chart?.result?.[0]?.meta;
+        if (meta) {
+          // 방법 1: sharesOutstanding 직접 제공되는 경우
+          if (meta.sharesOutstanding && meta.sharesOutstanding > 0) {
+            console.log(`✅ ${stockCode} Yahoo 상장주식수: ${meta.sharesOutstanding.toLocaleString()}주`);
+            return meta.sharesOutstanding;
+          }
+
+          // 방법 2: 시가총액 / 현재가로 역산
+          const marketCap = meta.marketCap;
+          const price = meta.regularMarketPrice || meta.previousClose;
+
+          if (marketCap && price && price > 0) {
+            const estimatedShares = Math.round(marketCap / price);
+            console.log(`✅ ${stockCode} Yahoo 역산 상장주식수: ${estimatedShares.toLocaleString()}주 (시총 ${(marketCap/1e12).toFixed(1)}조 / ${price}원)`);
+            return estimatedShares;
+          }
+        }
+      } catch (yahooError) {
+        console.log(`⚠️ ${stockCode} Yahoo Finance도 실패: ${yahooError.message}`);
       }
 
       console.log(`❌ ${stockCode} 모든 방법으로 상장주식수 조회 실패`);
