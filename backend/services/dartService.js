@@ -220,7 +220,7 @@ class DartService {
         // 코스피 시가총액 상위
         '005930': { corpCode: '00126380', corpName: '삼성전자' },
         '000660': { corpCode: '00164779', corpName: 'SK하이닉스' },
-        '005490': { corpCode: '00126380', corpName: 'POSCO홀딩스' }, // 수정: 오션스프링홀딩스 아님
+        '005490': { corpCode: '00164529', corpName: 'POSCO홀딩스' }, // 수정됨
         '005380': { corpCode: '00164742', corpName: '현대차' },
         '000270': { corpCode: '00164509', corpName: '기아' },
         '068270': { corpCode: '00401731', corpName: '셀트리온' },
