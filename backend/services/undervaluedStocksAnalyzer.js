@@ -355,51 +355,50 @@ class UndervaluedStocksAnalyzer {
         analysis.tangibleToMarketCapRatio = (analysis.tangibleAssets / marketCap) * 100;
       }
 
-      // 실물자산 가치주 판정
+      // 숨겨진 자산가치 판정
+      // 핵심: 재평가잉여금 = 0 AND 유형자산이 큼 → 재평가 안 한 오래된 자산 (숨겨진 가치)
       const reasons = [];
+      const hasRevaluation = analysis.revaluationSurplus > 0;
 
-      // 1. 재평가잉여금 존재 (가장 확실한 지표)
-      if (analysis.revaluationSurplus > 0) {
-        analysis.hasOldAssets = true;
-        reasons.push(`재평가잉여금 ${Math.round(analysis.revaluationSurplus).toLocaleString()}억 (자산재평가 완료)`);
+      // 재평가잉여금 체크
+      if (hasRevaluation) {
+        // 이미 재평가됨 → 숨겨진 가치 없음
+        analysis.hasOldAssets = false;
         analysis.assetDetails.push({
           type: '재평가잉여금',
           value: analysis.revaluationSurplus,
-          note: '토지/건물 재평가로 발생한 잉여금'
+          note: '⚠️ 이미 재평가 완료 - 숨겨진 가치 없음'
         });
-      }
+        reasons.push(`재평가잉여금 ${Math.round(analysis.revaluationSurplus).toLocaleString()}억 (이미 재평가됨)`);
+      } else {
+        // 재평가잉여금 = 0 → 재평가 안 함 → 숨겨진 가치 가능성
 
-      // 2. 유형자산 1000억 이상 (토지/건물 보유 가능성)
-      if (analysis.tangibleAssets >= 1000) {
-        analysis.hasOldAssets = true;
-        reasons.push(`유형자산 ${Math.round(analysis.tangibleAssets).toLocaleString()}억 (토지/건물 보유 추정)`);
-        analysis.assetDetails.push({
-          type: '유형자산',
-          value: analysis.tangibleAssets,
-          note: '1000억 이상 - 부동산 보유 가능성 높음'
-        });
-      }
+        // 유형자산 1000억 이상 (재평가 안 한 토지/건물 보유 가능성)
+        if (analysis.tangibleAssets >= 1000) {
+          analysis.hasOldAssets = true;
+          reasons.push(`유형자산 ${Math.round(analysis.tangibleAssets).toLocaleString()}억 (재평가 안 함 → 숨겨진 가치)`);
+          analysis.assetDetails.push({
+            type: '유형자산',
+            value: analysis.tangibleAssets,
+            note: '✅ 재평가잉여금 0원 + 유형자산 1000억+ → 숨겨진 자산가치'
+          });
+        }
 
-      // 3. 유형자산/시가총액 비율 50% 이상 (숨겨진 자산가치)
-      if (analysis.tangibleToMarketCapRatio >= 50) {
-        analysis.hasOldAssets = true;
-        reasons.push(`유형자산/시총 ${analysis.tangibleToMarketCapRatio.toFixed(0)}% (실물자산 가치주)`);
-        analysis.assetDetails.push({
-          type: '자산가치비율',
-          value: analysis.tangibleToMarketCapRatio,
-          note: '시가총액 대비 유형자산 비율 50%+'
-        });
-      }
-
-      // 4. 기타포괄손익누계액이 큰 경우 (재평가/평가이익 누적)
-      if (analysis.otherComprehensiveIncome > 500) {
-        if (!analysis.hasOldAssets) analysis.hasOldAssets = true;
-        reasons.push(`기타포괄손익 ${Math.round(analysis.otherComprehensiveIncome).toLocaleString()}억`);
+        // 유형자산/시가총액 비율 50% 이상 (실물자산 가치주)
+        if (analysis.tangibleToMarketCapRatio >= 50 && !analysis.hasOldAssets) {
+          analysis.hasOldAssets = true;
+          reasons.push(`유형자산/시총 ${analysis.tangibleToMarketCapRatio.toFixed(0)}% (숨겨진 가치)`);
+          analysis.assetDetails.push({
+            type: '자산가치비율',
+            value: analysis.tangibleToMarketCapRatio,
+            note: '✅ 재평가잉여금 0원 + 유형자산/시총 50%+ → 실물자산 가치주'
+          });
+        }
       }
 
       analysis.reason = reasons.length > 0
         ? reasons.join(' | ')
-        : '실물자산 가치 특이사항 없음';
+        : '숨겨진 자산가치 없음';
 
       console.log(`🏭 실물자산 분석: ${analysis.reason}`);
 
