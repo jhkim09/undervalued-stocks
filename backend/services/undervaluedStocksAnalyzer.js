@@ -58,8 +58,8 @@ class UndervaluedStocksAnalyzer {
         financialData
       );
 
-      // 6. 비유동자산 분석 (10년 이상 자산)
-      const assetAnalysis = await this.analyzeNonCurrentAssets(corpInfo.corpCode);
+      // 6. 실물자산 가치 분석 (재평가잉여금 + 유형자산 규모)
+      const assetAnalysis = await this.analyzeNonCurrentAssets(corpInfo.corpCode, 2024, marketCapBillion);
 
       // 7. 저평가 조건 체크
       const isUndervalued = this.checkUndervaluedCriteria(valuationMetrics);
@@ -266,17 +266,21 @@ class UndervaluedStocksAnalyzer {
   }
 
   /**
-   * 비유동자산 분석 (10년 이상 보유 자산 추정)
-   * - 전체 계정과목 API로 세부 자산 정보 조회
-   * - 감가상각누계액 / 취득원가 비율로 자산 연한 추정
-   * - 토지는 감가상각하지 않으므로 장기보유 자산으로 판정
+   * 실물자산 가치 분석 (DART API 한계로 대안 로직 사용)
+   *
+   * DART Open API는 토지/건물 세부 항목을 제공하지 않음
+   * 대안: 재평가잉여금 + 유형자산 규모 + 유형자산/시가총액 비율로 판정
+   *
+   * 판정 기준:
+   * 1. 재평가잉여금 존재 → 이미 재평가된 자산 보유 (확실)
+   * 2. 유형자산 1000억+ → 토지/건물 보유 가능성 높음
+   * 3. 유형자산/시가총액 50%+ → 실물자산 가치주
    */
-  async analyzeNonCurrentAssets(corpCode, year = 2024) {
+  async analyzeNonCurrentAssets(corpCode, year = 2024, marketCap = 0) {
     try {
       await this.delay(this.rateLimitDelay);
 
-      // 전체 계정과목 API 사용 (세부 항목 포함)
-      const response = await axios.get(`${this.baseURL}/fnlttSinglAcntAll.json`, {
+      const response = await axios.get(`${this.baseURL}/fnlttSinglAcnt.json`, {
         params: {
           crtfc_key: this.apiKey,
           corp_code: corpCode,
@@ -289,7 +293,7 @@ class UndervaluedStocksAnalyzer {
 
       // 2024년 데이터 없으면 2023년 시도
       if (response.data.status === '013' && year === 2024) {
-        return await this.analyzeNonCurrentAssets(corpCode, 2023);
+        return await this.analyzeNonCurrentAssets(corpCode, 2023, marketCap);
       }
 
       if (response.data.status !== '000') {
@@ -298,149 +302,108 @@ class UndervaluedStocksAnalyzer {
 
       const dataList = response.data.list || [];
 
-      // 자산 관련 데이터 추출
       const analysis = {
         hasOldAssets: false,
-        landValue: 0,
-        buildingGross: 0,        // 건물 취득원가
-        buildingNet: 0,          // 건물 장부가액
-        buildingDepreciation: 0, // 건물 감가상각누계액
-        machineryGross: 0,       // 기계장치 취득원가
-        machineryNet: 0,         // 기계장치 장부가액
-        machineryDepreciation: 0,
-        totalDepreciation: 0,    // 총 감가상각누계액
-        tangibleAssets: 0,       // 유형자산 총액
-        depreciationRatio: 0,
-        estimatedBuildingAge: null,
-        estimatedMachineryAge: null,
+        tangibleAssets: 0,          // 유형자산
+        nonCurrentAssets: 0,        // 비유동자산
+        totalAssets: 0,             // 자산총계
+        revaluationSurplus: 0,      // 재평가잉여금
+        otherComprehensiveIncome: 0, // 기타포괄손익누계액
+        tangibleToMarketCapRatio: 0, // 유형자산/시가총액 비율
         assetDetails: [],
         reason: ''
       };
 
-      // 재무상태표(BS) 항목만 필터링
-      const bsItems = dataList.filter(item => item.sj_div === 'BS');
+      const seenAccounts = new Set();
 
-      bsItems.forEach(item => {
+      dataList.forEach(item => {
         const accountName = item.account_nm || '';
         const amount = parseInt(item.thstrm_amount?.replace(/,/g, '') || '0') / 100000000;
 
-        // 토지
-        if (accountName === '토지' || accountName.includes('토지')) {
-          if (amount > 0 && analysis.landValue === 0) {
-            analysis.landValue = amount;
-            analysis.assetDetails.push({ type: '토지', value: amount, note: '감가상각 없음 (장기보유)' });
-          }
-        }
-        // 건물 (장부가액)
-        else if ((accountName === '건물' || accountName === '건물및구축물' || accountName.includes('건물'))
-                 && !accountName.includes('감가상각') && !accountName.includes('누계')) {
-          if (amount > 0 && analysis.buildingNet === 0) {
-            analysis.buildingNet = amount;
-          }
-        }
-        // 건물 감가상각누계액
-        else if (accountName.includes('건물') && accountName.includes('감가상각누계액')) {
-          analysis.buildingDepreciation = Math.abs(amount);
-        }
-        // 기계장치 (장부가액)
-        else if ((accountName === '기계장치' || accountName.includes('기계'))
-                 && !accountName.includes('감가상각') && !accountName.includes('누계')) {
-          if (amount > 0 && analysis.machineryNet === 0) {
-            analysis.machineryNet = amount;
-          }
-        }
-        // 기계장치 감가상각누계액
-        else if (accountName.includes('기계') && accountName.includes('감가상각누계액')) {
-          analysis.machineryDepreciation = Math.abs(amount);
-        }
-        // 유형자산 총계
-        else if (accountName === '유형자산') {
+        // 유형자산
+        if ((accountName === '유형자산' || accountName === '유형 자산') && !seenAccounts.has('tangible')) {
           analysis.tangibleAssets = amount;
+          seenAccounts.add('tangible');
         }
-        // 총 감가상각누계액
-        else if (accountName.includes('감가상각누계액') && !accountName.includes('건물') && !accountName.includes('기계')) {
-          analysis.totalDepreciation += Math.abs(amount);
+        // 비유동자산
+        else if ((accountName === '비유동자산' || accountName === '비유동 자산') && !seenAccounts.has('nonCurrent')) {
+          analysis.nonCurrentAssets = amount;
+          seenAccounts.add('nonCurrent');
+        }
+        // 자산총계
+        else if ((accountName === '자산총계' || accountName === '자산 총계') && !seenAccounts.has('totalAssets')) {
+          analysis.totalAssets = amount;
+          seenAccounts.add('totalAssets');
+        }
+        // 재평가잉여금 (다양한 표현)
+        else if ((accountName.includes('재평가') && accountName.includes('잉여금')) ||
+                 accountName === '재평가잉여금' ||
+                 accountName === '토지재평가차액') {
+          analysis.revaluationSurplus += amount;
+        }
+        // 기타포괄손익누계액
+        else if (accountName.includes('기타포괄손익') && accountName.includes('누계')) {
+          analysis.otherComprehensiveIncome = amount;
         }
       });
 
-      // 건물 취득원가 및 연한 계산 (내용연수 40년 가정)
-      if (analysis.buildingNet > 0 || analysis.buildingDepreciation > 0) {
-        analysis.buildingGross = analysis.buildingNet + analysis.buildingDepreciation;
-        if (analysis.buildingGross > 0) {
-          const buildingDepRatio = (analysis.buildingDepreciation / analysis.buildingGross) * 100;
-          analysis.estimatedBuildingAge = Math.round(buildingDepRatio * 0.4); // 40년 * 비율
-          if (analysis.estimatedBuildingAge >= 10) {
-            analysis.assetDetails.push({
-              type: '건물',
-              grossValue: analysis.buildingGross,
-              netValue: analysis.buildingNet,
-              depreciation: analysis.buildingDepreciation,
-              depreciationRatio: buildingDepRatio.toFixed(1) + '%',
-              estimatedAge: analysis.estimatedBuildingAge + '년',
-              note: '내용연수 40년 기준'
-            });
-          }
-        }
+      // 유형자산/시가총액 비율 계산
+      if (marketCap > 0 && analysis.tangibleAssets > 0) {
+        analysis.tangibleToMarketCapRatio = (analysis.tangibleAssets / marketCap) * 100;
       }
 
-      // 기계장치 취득원가 및 연한 계산 (내용연수 10년 가정)
-      if (analysis.machineryNet > 0 || analysis.machineryDepreciation > 0) {
-        analysis.machineryGross = analysis.machineryNet + analysis.machineryDepreciation;
-        if (analysis.machineryGross > 0) {
-          const machineryDepRatio = (analysis.machineryDepreciation / analysis.machineryGross) * 100;
-          analysis.estimatedMachineryAge = Math.round(machineryDepRatio * 0.1); // 10년 * 비율
-          if (analysis.estimatedMachineryAge >= 5) {
-            analysis.assetDetails.push({
-              type: '기계장치',
-              grossValue: analysis.machineryGross,
-              netValue: analysis.machineryNet,
-              depreciation: analysis.machineryDepreciation,
-              depreciationRatio: machineryDepRatio.toFixed(1) + '%',
-              estimatedAge: analysis.estimatedMachineryAge + '년',
-              note: '내용연수 10년 기준'
-            });
-          }
-        }
-      }
-
-      // 전체 감가상각 비율 계산
-      if (analysis.tangibleAssets > 0 && analysis.totalDepreciation > 0) {
-        const grossTotal = analysis.tangibleAssets + analysis.totalDepreciation;
-        analysis.depreciationRatio = (analysis.totalDepreciation / grossTotal) * 100;
-      }
-
-      // 10년 이상 보유 자산 판정
+      // 실물자산 가치주 판정
       const reasons = [];
 
-      // 토지가 있으면 장기보유 자산
-      if (analysis.landValue > 0) {
+      // 1. 재평가잉여금 존재 (가장 확실한 지표)
+      if (analysis.revaluationSurplus > 0) {
         analysis.hasOldAssets = true;
-        reasons.push(`토지 ${analysis.landValue.toLocaleString()}억원 (장기보유 자산)`);
+        reasons.push(`재평가잉여금 ${Math.round(analysis.revaluationSurplus).toLocaleString()}억 (자산재평가 완료)`);
+        analysis.assetDetails.push({
+          type: '재평가잉여금',
+          value: analysis.revaluationSurplus,
+          note: '토지/건물 재평가로 발생한 잉여금'
+        });
       }
 
-      // 건물 10년 이상
-      if (analysis.estimatedBuildingAge && analysis.estimatedBuildingAge >= 10) {
+      // 2. 유형자산 1000억 이상 (토지/건물 보유 가능성)
+      if (analysis.tangibleAssets >= 1000) {
         analysis.hasOldAssets = true;
-        reasons.push(`건물 추정 ${analysis.estimatedBuildingAge}년 보유 (취득원가 ${analysis.buildingGross.toLocaleString()}억)`);
+        reasons.push(`유형자산 ${Math.round(analysis.tangibleAssets).toLocaleString()}억 (토지/건물 보유 추정)`);
+        analysis.assetDetails.push({
+          type: '유형자산',
+          value: analysis.tangibleAssets,
+          note: '1000억 이상 - 부동산 보유 가능성 높음'
+        });
       }
 
-      // 기계장치 5년 이상 (기계는 내용연수가 짧으므로 5년 이상이면 오래된 것)
-      if (analysis.estimatedMachineryAge && analysis.estimatedMachineryAge >= 5) {
+      // 3. 유형자산/시가총액 비율 50% 이상 (숨겨진 자산가치)
+      if (analysis.tangibleToMarketCapRatio >= 50) {
         analysis.hasOldAssets = true;
-        reasons.push(`기계장치 추정 ${analysis.estimatedMachineryAge}년 보유`);
+        reasons.push(`유형자산/시총 ${analysis.tangibleToMarketCapRatio.toFixed(0)}% (실물자산 가치주)`);
+        analysis.assetDetails.push({
+          type: '자산가치비율',
+          value: analysis.tangibleToMarketCapRatio,
+          note: '시가총액 대비 유형자산 비율 50%+'
+        });
       }
 
-      analysis.reason = reasons.join(', ') || '10년 이상 보유 자산 미확인';
-
-      console.log(`🏭 비유동자산 분석: ${analysis.reason}`);
-      if (analysis.assetDetails.length > 0) {
-        console.log(`📋 자산 상세:`, JSON.stringify(analysis.assetDetails, null, 2));
+      // 4. 기타포괄손익누계액이 큰 경우 (재평가/평가이익 누적)
+      if (analysis.otherComprehensiveIncome > 500) {
+        if (!analysis.hasOldAssets) analysis.hasOldAssets = true;
+        reasons.push(`기타포괄손익 ${Math.round(analysis.otherComprehensiveIncome).toLocaleString()}억`);
       }
+
+      analysis.reason = reasons.length > 0
+        ? reasons.join(' | ')
+        : '실물자산 가치 특이사항 없음';
+
+      console.log(`🏭 실물자산 분석: ${analysis.reason}`);
 
       return analysis;
 
     } catch (error) {
-      console.error('비유동자산 분석 실패:', error.message);
+      console.error('실물자산 분석 실패:', error.message);
       return { hasOldAssets: null, reason: error.message, assetDetails: [] };
     }
   }
