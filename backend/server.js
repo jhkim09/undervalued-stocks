@@ -54,9 +54,22 @@ app.get('/api/health', async (req, res) => {
     const StockListService = require('./services/stockListService');
     const stats = StockListService.getStatistics();
 
+    // MongoDB 연결 상태 확인
+    const mongoState = mongoose.connection.readyState;
+    const mongoStates = {
+      0: 'disconnected',
+      1: 'connected',
+      2: 'connecting',
+      3: 'disconnecting'
+    };
+
     res.json({
       status: 'OK',
       message: '저평가주식 분석 API 서버 실행 중',
+      mongodb: {
+        status: mongoStates[mongoState] || 'unknown',
+        connected: mongoState === 1
+      },
       system: {
         mode: 'VALUE_INVESTING',
         unifiedStocks: stats.total,

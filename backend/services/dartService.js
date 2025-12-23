@@ -401,9 +401,15 @@ class DartService {
         console.log(`⚠️ ${stockCode} Fallback API도 실패: ${fallbackError.message}`);
       }
       
+      // 2024년 실패 시 2023년 재시도
+      if (year === 2024) {
+        console.log(`📊 ${stockCode} 2024년 데이터 없음, 2023년 재시도...`);
+        return await this.getSharesOutstanding(stockCode, 2023);
+      }
+
       console.log(`❌ ${stockCode} 모든 방법으로 상장주식수 조회 실패`);
       return null;
-      
+
     } catch (error) {
       console.error(`상장주식수 조회 실패 (${stockCode}):`, error.message);
       return null;
